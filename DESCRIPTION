@@ -1,0 +1,27 @@
+Package: fluxcapacitor
+Title: CO2 Flux Inversion
+Version: 0.0.1
+Authors@R: 
+    person(given = "Michael",
+           family = "Bertolacci",
+           role = c("aut", "cre"),
+           email = "m.bertolacci@gmail.com",
+           comment = c(ORCID = "YOUR-ORCID-ID"))
+Description: What the package does (one paragraph).
+License: What license it uses
+Encoding: UTF-8
+LazyData: true
+Imports: 
+    FRK,
+    Matrix,
+    dplyr,
+    futile.logger,
+    lubridate,
+    Rcpp
+RoxygenNote: 6.1.1
+Suggests: 
+    testthat
+LinkingTo: 
+    Rcpp,
+    RcppEigen,
+    Matrix
