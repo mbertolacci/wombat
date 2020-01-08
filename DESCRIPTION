@@ -17,10 +17,14 @@ Imports:
     dplyr,
     futile.logger,
     lubridate,
-    Rcpp
+    Rcpp,
+    ggplot2
 RoxygenNote: 6.1.1
 Suggests: 
-    testthat
+    testthat,
+    shiny,
+    shinyWidgets,
+    colourpicker
 LinkingTo: 
     Rcpp,
     RcppEigen,

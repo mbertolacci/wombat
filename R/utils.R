@@ -1,10 +1,10 @@
 #' @export
 to_month_start <- function(x) {
-  x <- lubridate::date(x)
+  x <- date(x)
   if_else(
-    lubridate::day(x) == 1,
-    x + lubridate::days(1) - months(1),
-    x + lubridate::days(2 - lubridate::day(x))
+    day(x) == 1,
+    x + days(1) - months(1),
+    x + days(2 - day(x))
   )
 }
 

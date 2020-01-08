@@ -36,10 +36,12 @@ flux_process_model <- function(
   # NOTE(mgnb): do lag computation on the month_start from control because it's
   # much shorter than doing it after it's joined to sensitivities
   control_month_start_lag <- control$month_start - lag
-  sensitivities$month_start_lag <- control_month_start_lag[
-    match(sensitivities$model_id, control$model_id)
-  ]
   truncated_sensitivities <- sensitivities %>%
+    mutate(
+      month_start_lag = control_month_start_lag[
+        match(model_id, control$model_id)
+      ]
+    ) %>%
     filter(
       month_start_lag <= from_month_start
     )
@@ -76,6 +78,7 @@ flux_process_model <- function(
     'Phi',
     'H',
     'control',
+    'sensitivities',
     'regions',
     'a',
     'a_prior',
