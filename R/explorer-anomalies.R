@@ -54,7 +54,13 @@ anomaly_explorer_ui <- function(id, measurement_model, process_model) {
 }
 
 #' @export
-anomaly_explorer <- function(input, output, session, measurement_model, process_model) {
+anomaly_explorer <- function(
+  input,
+  output,
+  session,
+  measurement_model,
+  process_model
+) {
   reactive <- shiny::reactive
   renderPlot <- shiny::renderPlot
 
@@ -77,7 +83,10 @@ anomaly_explorer <- function(input, output, session, measurement_model, process_
   })
 
   output$anomalyMap1 <- renderPlot({
-    ggplot(anomalies_window(), aes(observation_longitude, observation_latitude, colour = xco2_anomaly)) +
+    ggplot(
+      anomalies_window(),
+      aes(observation_longitude, observation_latitude, colour = xco2_anomaly)
+    ) +
       geom_world() +
       geom_point(
         position = position_jitter(width = 0.5, height = 0.5),
@@ -113,7 +122,10 @@ anomaly_explorer <- function(input, output, session, measurement_model, process_
       group_by(model_longitude, model_latitude) %>%
       summarise(xco2_anomaly_mean = mean(xco2_anomaly))
 
-    ggplot(df_average, aes(model_longitude, model_latitude, fill = xco2_anomaly_mean)) +
+    ggplot(
+      df_average,
+      aes(model_longitude, model_latitude, fill = xco2_anomaly_mean)
+    ) +
       geom_world() +
       geom_tile() +
       coord_quickmap() +

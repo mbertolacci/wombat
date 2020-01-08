@@ -42,7 +42,8 @@ emission_inventory_explorer <- function(
   output$emissionsMap <- shiny::renderPlot({
     ggplot() +
       geom_tile(
-        data = emissions %>% filter(format(month_start, '%Y-%m') == input$month),
+        data = emissions %>%
+          filter(format(month_start, '%Y-%m') == input$month),
         mapping = aes(longitude, latitude, fill = flux)
       ) +
       geom_sf(
@@ -60,7 +61,7 @@ emission_inventory_explorer <- function(
       labs(
         x = 'Longitude',
         y = 'Latitude',
-        fill = expression('Flux [kg/'*m^2*'/year]')
+        fill = expression('Flux [kg/' * m ^ 2 * '/year]')
       ) +
       xlim(-180, 180) +
       ylim(-90, 90)

@@ -2,8 +2,8 @@
 .ddi_to_dsC <- function(x, symmetric) {
   # Transpose ensures upper triangular
   t(sparseMatrix(
-    i = 1 : ncol(x),
-    j = 1 : ncol(x),
+    i = seq_len(ncol(x)),
+    j = seq_len(ncol(x)),
     x = x@x,
     symmetric = TRUE
   ))

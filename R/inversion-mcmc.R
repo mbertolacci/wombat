@@ -26,7 +26,7 @@ inversion_mcmc <- function(
   find_gamma <- is.null(measurement_model[['gamma']])
 
   .log_debug('Precomputing various quantities')
-  Z <- measurement_model$soundings$xco2 - as.vector(measurement_model$C %*% process_model$control$xco2)
+  Z <- anomaly(measurement_model, process_model)
   C <- measurement_model$C
   X <- cbind(
     C %*% process_model$H,
@@ -98,7 +98,10 @@ inversion_mcmc <- function(
     chol_Q_omega_conditional <- chol(
       Q_omega(current)
       + Xt_Q_epsilon_X(current)
-      - crossprod(solve(t(chol_Q_eta_conditional_i), Psi_Ct_Q_epsilon_X(current)))
+      - crossprod(solve(
+        t(chol_Q_eta_conditional_i),
+        Psi_Ct_Q_epsilon_X(current)
+      ))
     )
     mu_omega_conditional <- as.vector(.chol_solve(
       chol_Q_omega_conditional,
@@ -112,7 +115,10 @@ inversion_mcmc <- function(
         )
       )
     ))
-    omega <- mu_omega_conditional + .sample_normal_precision_chol(chol_Q_omega_conditional)
+    omega <- (
+      mu_omega_conditional
+      + .sample_normal_precision_chol(chol_Q_omega_conditional)
+    )
     current$alpha <- head(omega, n_alpha)
     current$beta <- tail(omega, n_beta)
 
@@ -129,7 +135,10 @@ inversion_mcmc <- function(
         )
         output
       }, learn = (iteration <= warm_up), include_n_evaluations = TRUE)
-      .log_trace('[%d/%d] a took %d evaluations, w = %f', iteration, n_iterations, output$n_evaluations, output$w)
+      .log_trace(
+        '[%d/%d] a took %d evaluations, w = %f',
+        iteration, n_iterations, output$n_evaluations, output$w
+      )
 
       current$a <- output$sample
     }
@@ -141,7 +150,10 @@ inversion_mcmc <- function(
       current$w <- rgamma(
         n_w,
         shape = process_model$w_prior[1] + 0.5 * n_times,
-        rate =  process_model$w_prior[2] + 0.5 * colSums((chol_Q_alpha_t %*% alpha_matrix) ^ 2)
+        rate = (
+          process_model$w_prior[2]
+          + 0.5 * colSums((chol_Q_alpha_t %*% alpha_matrix) ^ 2)
+        )
       )
     }
 
@@ -169,7 +181,10 @@ inversion_mcmc <- function(
           )
         }, learn = (iteration <= warm_up), include_n_evaluations = TRUE)
 
-        .log_trace('[%d/%d] gamma[%d] took %d evaluations, w = %f', iteration, n_iterations, i, output$n_evaluations, output$w)
+        .log_trace(
+          '[%d/%d] gamma[%d] took %d evaluations, w = %f',
+          iteration, n_iterations, i, output$n_evaluations, output$w
+        )
 
         output$sample
       })

@@ -239,7 +239,9 @@ osse_explorer <- function(
         data = emissions_sample() %>%
           filter(
             format(month_start, '%Y-%m') >= input$emissions_month,
-            format(month_start - months(input$months_to_include)) <= input$emissions_month
+            format(
+              month_start - months(input$months_to_include)
+            ) <= input$emissions_month
           ),
         mapping = aes(longitude, latitude, fill = flux_anomaly_sample)
       ) +
@@ -258,7 +260,7 @@ osse_explorer <- function(
       labs(
         x = 'Longitude',
         y = 'Latitude',
-        fill = expression('Flux [kg/'*m^2*'/year]')
+        fill = expression('Flux [kg/' * m ^ 2 * '/year]')
       ) +
       xlim(-180, 180) +
       ylim(-90, 90) +
@@ -271,7 +273,10 @@ osse_explorer <- function(
       group_by(longitude, latitude) %>%
       summarise(xco2_anomaly_sample_mean = mean(xco2_anomaly_sample))
 
-    ggplot(df_average, aes(longitude, latitude, fill = xco2_anomaly_sample_mean)) +
+    ggplot(
+      df_average,
+      aes(longitude, latitude, fill = xco2_anomaly_sample_mean)
+    ) +
       geom_world() +
       geom_tile() +
       coord_quickmap() +
@@ -292,7 +297,11 @@ osse_explorer <- function(
   output$measurementSampleMap <- renderPlot({
     ggplot(
       measurement_sample_window(),
-      aes(observation_longitude, observation_latitude, colour = xco2_anomaly_sample)
+      aes(
+        observation_longitude,
+        observation_latitude,
+        colour = xco2_anomaly_sample
+      )
     ) +
       geom_world() +
       geom_point(

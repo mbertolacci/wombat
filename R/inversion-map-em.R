@@ -11,10 +11,6 @@ inversion_map_em <- function(
   ...
 ) {
   n_alpha <- ncol(process_model$H)
-  n_beta <- ncol(measurement_model$A)
-  n_regions <- length(process_model$regions)
-  n_times <- n_alpha / length(process_model$regions)
-  n_w <- length(process_model$regions)
   n_gamma <- nlevels(measurement_model$attenuation_factor)
 
   find_a <- is.null(process_model[['a']])
@@ -31,7 +27,7 @@ inversion_map_em <- function(
 
   .log_debug('Precomputing various quantities')
   attenuation_index <- as.integer(measurement_model$attenuation_factor)
-  Z <- measurement_model$soundings$xco2 - as.vector(measurement_model$C %*% process_model$control$xco2)
+  Z <- anomaly(measurement_model, process_model)
   C <- measurement_model$C
   X <- cbind(
     C %*% process_model$H,
@@ -86,7 +82,7 @@ inversion_map_em <- function(
         a <- get_a(theta)
         w <- get_w(theta)
         Q_alpha_current <- Q_alpha(list(a = a, w = w))
-        -(
+        - (
           0.5 * determinant(Q_alpha_current, logarithm = TRUE)$modulus
           - 0.5 * sum(diag(Q_alpha_current %*% T))
           + log_prior(process_model, a, w)
@@ -95,14 +91,16 @@ inversion_map_em <- function(
         if (find_a) .logit_transform(current$a) else NULL,
         if (find_w) .inv_softplus_transform(current$w) else NULL
       )), nlm_args)))
-      # stopifnot(output$code <= 3)
       current$a <- get_a(output$estimate)
       current$w <- get_w(output$estimate)
     }
 
     if (find_gamma) {
       .log_trace('[%d] Optimising for gamma', iteration)
-      Y_tilde <- as.vector(sqrt(measurement_model$measurement_precision) %*% (Z - X %*% mu_omega_conditional))
+      Y_tilde <- as.vector(
+        sqrt(measurement_model$measurement_precision)
+        %*% (Z - X %*% mu_omega_conditional)
+      )
 
       current$gamma <- sapply(1 : n_gamma, function(gamma_index) {
         indices <- attenuation_index == gamma_index
@@ -113,7 +111,10 @@ inversion_map_em <- function(
         shape <- measurement_model$gamma_prior[1] + n / 2
         rate <- measurement_model$gamma_prior[2] + 0.5 * (
           sum(Y_tilde[indices] ^ 2)
-          - as.vector(crossprod(mu_omega_conditional, Xt_Q_epsilon0_X_part %*% mu_omega_conditional))
+          - as.vector(crossprod(
+            mu_omega_conditional,
+            Xt_Q_epsilon0_X_part %*% mu_omega_conditional
+          ))
           + sum(diag(E_omega_t_omega %*% Xt_Q_epsilon0_X_part))
         )
         (shape - 1) / rate
@@ -149,7 +150,10 @@ inversion_map_em <- function(
     }
 
     if (abs(log_posterior - log_posterior_previous) < objective_tolerance) {
-      .log_trace('[%d] Terminating because change in log posterior is within tolerance', iteration)
+      .log_trace(
+        '[%d] Terminating because change in log posterior is within tolerance',
+        iteration
+      )
       code <- 1
       break
     }

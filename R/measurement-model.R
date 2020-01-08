@@ -5,7 +5,7 @@ flux_measurement_model <- function(
   matching,
   process_model,
   C = sparseMatrix(
-    i = 1 : nrow(soundings),
+    i = seq_len(nrow(soundings)),
     j = matching,
     dims = c(nrow(soundings), nrow(process_model$control))
   ),
@@ -93,6 +93,14 @@ generate.flux_measurement_model <- function(model, process_sample) {
 }
 
 #' @export
+anomaly <- function(measurement_model, process_model) {
+  (
+    measurement_model$soundings$xco2
+    - as.vector(measurement_model$C %*% process_model$control$xco2)
+  )
+}
+
+#' @export
 log_prior.flux_measurement_model <- function(model, gamma) {
   if (is.null(model$gamma)) {
     sum(dgamma(
@@ -105,26 +113,6 @@ log_prior.flux_measurement_model <- function(model, gamma) {
     0
   }
 }
-
-# .make_Xt_Q_epsilon_X <- function(X, model) {
-#   attenuation_index <- as.integer(model$attenuation_factor)
-#   n_gamma <- nlevels(model$attenuation_factor)
-
-#   Xt_Q_epsilon0_X_parts <- array(NA, dim = c(n_gamma, ncol(X), ncol(X)))
-#   for (gamma_index in 1 : n_gamma) {
-#     indices <- attenuation_index == gamma_index
-#     X_part <- X[indices, ]
-#     Q_epsilon0_part <- model$measurement_precision[indices, indices]
-#     Xt_Q_epsilon0_X_parts[gamma_index, , ] <- as.matrix(crossprod(
-#       sqrt(Q_epsilon0_part) %*% X_part
-#     ))
-#   }
-
-#   function(params = list(gamma = rep(1, n_gamma)), parts = 1 : n_gamma) {
-#     colSums(params$gamma[parts] * Xt_Q_epsilon0_X_parts[parts, , , drop = FALSE])
-#   }
-# }
-
 
 .make_Xt_Q_epsilon_X <- function(X, model) {
   attenuation_index <- as.integer(model$attenuation_factor)
@@ -150,26 +138,6 @@ log_prior.flux_measurement_model <- function(model, gamma) {
     }, parts, NULL)
   }
 }
-
-# .make_A_Q_epsilon_B <- function(A, B, model) {
-#   attenuation_index <- as.integer(model$attenuation_factor)
-#   n_gamma <- nlevels(model$attenuation_factor)
-
-#   A_Q_epsilon0_B_parts <- array(NA, dim = c(n_gamma, nrow(A), ncol(B)))
-#   for (gamma_index in 1 : n_gamma) {
-#     indices <- attenuation_index == gamma_index
-#     A_part <- A[, indices]
-#     B_part <- B[indices, ]
-#     Q_epsilon0_part <- model$measurement_precision[indices, indices]
-#     A_Q_epsilon0_B_parts[gamma_index, , ] <- as.matrix(
-#       A_part %*% Q_epsilon0_part %*% B_part
-#     )
-#   }
-
-#   function(params = list(gamma = rep(1, n_gamma)), parts = 1 : n_gamma) {
-#     colSums(params$gamma[parts] * A_Q_epsilon0_B_parts[parts, , , drop = FALSE])
-#   }
-# }
 
 .make_A_Q_epsilon_B <- function(A, B, model) {
   attenuation_index <- as.integer(model$attenuation_factor)

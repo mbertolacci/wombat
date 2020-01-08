@@ -189,10 +189,9 @@ log_prior.flux_process_model <- function(model, a, w) {
 
   function(params) {
     Q_alpha_t <- ar1_Q(n_times, params$a)
-    # Q_alpha_s <- Diagonal(n_w, x = params$w)
     Q_alpha_s <- t(sparseMatrix(
-      i = 1 : n_w,
-      j = 1 : n_w,
+      i = seq_len(n_w),
+      j = seq_len(n_w),
       x = params$w,
       symmetric = TRUE
     ))

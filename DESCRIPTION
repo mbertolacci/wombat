@@ -22,6 +22,7 @@ Imports:
 RoxygenNote: 6.1.1
 Suggests: 
     testthat,
+    lintr,
     shiny,
     shinyWidgets,
     colourpicker

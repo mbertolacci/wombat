@@ -69,7 +69,10 @@ sounding_explorer <- function(input, output, session, measurement_model) {
   })
 
   output$soundingMap1 <- renderPlot({
-    ggplot(sounding_window(), aes(observation_longitude, observation_latitude, colour = xco2)) +
+    ggplot(
+      sounding_window(),
+      aes(observation_longitude, observation_latitude, colour = xco2)
+    ) +
       geom_world() +
       geom_point(
         position = position_jitter(width = 0.5, height = 0.5),

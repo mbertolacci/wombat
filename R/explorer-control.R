@@ -43,7 +43,13 @@ control_explorer_ui <- function(id, measurement_model, process_model) {
 }
 
 #' @export
-control_explorer <- function(input, output, session, measurement_model, process_model) {
+control_explorer <- function(
+  input,
+  output,
+  session,
+  measurement_model,
+  process_model
+) {
   reactive <- shiny::reactive
 
   control <- process_model$control

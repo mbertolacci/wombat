@@ -23,7 +23,7 @@
 }
 
 .alpha_beta_eta_hat <- function(current, measurement_model, process_model) {
-  Z <- measurement_model$soundings$xco2 - as.vector(measurement_model$C %*% process_model$control$xco2)
+  Z <- anomaly(measurement_model, process_model)
 
   C <- measurement_model$C
   X <- cbind(
@@ -57,7 +57,11 @@
 
   list(
     alpha = omega_hat[1 : n_alpha],
-    beta = if (n_beta > 0) omega_hat[(n_alpha + 1) : (n_alpha + n_beta)] else NULL,
+    beta = if (n_beta > 0) {
+      omega_hat[(n_alpha + 1) : (n_alpha + n_beta)]
+    } else {
+      NULL
+    },
     eta = tail(omega_hat, n_eta),
     chol_Q_omega = chol_Q_omega_post
   )

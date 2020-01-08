@@ -178,7 +178,7 @@ sensitivity_explorer <- function(
       labs(
         x = 'Longitude',
         y = 'Latitude',
-        fill = expression('Flux [kg/'*m^2*'/year]')
+        fill = expression('Flux [kg/' * m ^ 2 * '/year]')
       ) +
       xlim(-180, 180) +
       ylim(-90, 90)

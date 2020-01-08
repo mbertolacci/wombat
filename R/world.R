@@ -20,7 +20,7 @@ geom_world <- function(
       # High group number to avoid duplication
       group = 1e5,
       # new name for border not already used
-      region = "border"
+      region = 'border'
     )
     worldmap <- bind_rows(worldmap, border)
   }
