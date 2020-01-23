@@ -7,17 +7,21 @@
 slice(w, max_evaluations = 100)
 }
 \arguments{
-\item{w}{stepping-out interval. This is just a starting value if returned function is called with \code{learn=T}.}
+\item{w}{stepping-out interval. This is just a starting value if returned
+function is called with \code{learn=T}.}
 }
 \description{
-Implements Neal (2003) stepping out univariate slice sampler, with
-learning -- best for unimodal distributions (does not break Markov
-property), but also possible to use in spin-up.  Uses enclosure to
-preserve values from one iteration to the next.  Supply the /log
-density/ to the returned function.
+Implements Neal (2003) stepping out univariate slice sampler,
+with learning -- best for unimodal distributions (does not break Markov
+property), but also possible to use in spin-up.  Uses enclosure to preserve
+values from one iteration to the next.  Supply the log density to the
+returned function.
 }
 \details{
-\code{slice} returns a function which should be called with the current sample (\code{x0}), the log density (\code{logf}) and a learn toggle (\code{learn}). If learn is \code{TRUE} the stepping-out interval \code{w} is adjusted according to a running sum of samples so far
+\code{slice} returns a function which should be called with the
+current sample (\code{x0}), the log density (\code{logf}) and a learn toggle
+(\code{learn}). If learn is \code{TRUE} the stepping-out interval \code{w} is
+adjusted according to a running sum of samples so far.
 }
 \examples{
 ## Not run:
@@ -36,7 +40,11 @@ for (i in (-spinup):N) {
   x <- myslice(x, myfun, learn = i <= 0)
   if (i > 0) rsam[i] <- x
   if (abs(i) <= 5)
-        cat(sprintf("i = \%i, w = \%.3f\\n", i, get("w", envir = environment(myslice))))
+   cat(sprintf(
+     'i = \%i, w = \%.3f\\n',
+     i,
+     get("w", envir = environment(myslice))
+   ))
 }
 hist(rsam, col = "grey", freq = FALSE, breaks = 40)
 x <- sort(rsam)
@@ -45,7 +53,8 @@ lines(x, exp(myfun(x)), xpd = NA)
 ## End(Not run)
 }
 \references{
-Neal, Radford M. "Slice sampling." Annals of statistics (2003): 705-741.
+Neal, Radford M. "Slice sampling." Annals of statistics (2003):
+705-741.
 }
 \author{
 Jonathan Rougier

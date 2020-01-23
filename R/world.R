@@ -5,13 +5,9 @@ geom_world <- function(
   size = 0.1,
   inherit.aes = FALSE,
   wrap = c(-180, 180),
-  map_data_arguments = list(interior = FALSE),
   ...
 ) {
-  worldmap <- fortify(do.call(
-    maps::map,
-    c(list('world', wrap = wrap), map_data_arguments)
-  ))
+  worldmap <- fortify(rnaturalearth::ne_coastline(110))
 
   if (include_border) {
     border <- data.frame(
@@ -28,6 +24,24 @@ geom_world <- function(
   geom_path(
     data = worldmap,
     mapping = aes(x = long, y = lat, group = group),
+    colour = colour,
+    size = size,
+    inherit.aes = inherit.aes,
+    ...
+  )
+}
+
+#' @export
+geom_world_sf <- function(
+  colour = 'black',
+  size = 0.1,
+  inherit.aes = FALSE,
+  ...
+) {
+  worldmap <- sf::st_as_sf(rnaturalearth::ne_coastline(110))
+
+  geom_sf(
+    data = worldmap,
     colour = colour,
     size = size,
     inherit.aes = inherit.aes,

@@ -27,7 +27,7 @@ inversion_map_em <- function(
 
   .log_debug('Precomputing various quantities')
   attenuation_index <- as.integer(measurement_model$attenuation_factor)
-  Z <- anomaly(measurement_model, process_model)
+  Z2_tilde <- calculate(measurement_model, 'Z2_tilde', process_model)
   C <- measurement_model$C
   X <- cbind(
     C %*% process_model$H,
@@ -67,7 +67,7 @@ inversion_map_em <- function(
     )
     mu_omega_conditional <- .chol_solve(
       chol_Q_omega_conditional,
-      crossprod(X, Q_epsilon(current) %*% Z)
+      crossprod(X, Q_epsilon(current) %*% Z2_tilde)
     )
 
     E_omega_t_omega <- (
@@ -99,7 +99,7 @@ inversion_map_em <- function(
       .log_trace('[%d] Optimising for gamma', iteration)
       Y_tilde <- as.vector(
         sqrt(measurement_model$measurement_precision)
-        %*% (Z - X %*% mu_omega_conditional)
+        %*% (Z2_tilde - X %*% mu_omega_conditional)
       )
 
       current$gamma <- sapply(1 : n_gamma, function(gamma_index) {
@@ -126,14 +126,14 @@ inversion_map_em <- function(
     log_posterior_previous <- log_posterior
     log_posterior <- (
       .log_pdf_woodbury(
-        Z,
+        Z2_tilde,
         Q_epsilon(current),
         chol(Q_omega_current + Xt_Q_epsilon_X(current)),
         Q_omega_current,
         X
       )
-      + log_prior(process_model, a_current, w_current)
-      + log_prior(measurement_model, gamma_current)
+      + log_prior(process_model, current$a, current$w)
+      + log_prior(measurement_model, current$gamma)
     )
 
     step_max_abs <- max(abs(do.call(c, current) - do.call(c, previous)))

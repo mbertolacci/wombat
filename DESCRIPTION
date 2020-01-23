@@ -14,11 +14,15 @@ LazyData: true
 Imports: 
     FRK,
     Matrix,
+    coda,
     dplyr,
     futile.logger,
     lubridate,
     Rcpp,
-    ggplot2
+    ggplot2,
+    memoise,
+    digest,
+    sf
 RoxygenNote: 6.1.1
 Suggests: 
     testthat,

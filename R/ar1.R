@@ -32,7 +32,7 @@ ar1_Q <- function(n_times, rho) {
       1, 1,
       rep(1 + rho ^ 2, n_times - 2),
       rep(-rho, n_times - 1)
-    ),
+    ) / (1 - rho ^ 2),
     symmetric = TRUE
   ))
 }

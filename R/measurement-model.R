@@ -9,46 +9,58 @@ flux_measurement_model <- function(
     j = matching,
     dims = c(nrow(soundings), nrow(process_model$control))
   ),
-  attenuation_variables = NULL,
-  measurement_variance = soundings$xco2_error ^ 2,
-  measurement_precision = Diagonal(
-    x = 1 / measurement_variance
-  ),
-  A = model.matrix(update(biases, ~ . - 1), soundings),
-  beta = NULL,
-  beta_prior_mean = rep(0, ncol(A)),
-  beta_prior_variance = 4,
-  beta_prior_precision = Diagonal(ncol(A), 1 / beta_prior_variance),
-  gamma = NULL,
-  gamma_prior = gamma_quantile_prior(0.1, 1.9)
-) {
-  soundings <- soundings %>%
-    arrange(sounding_id)
-
-  if (!is.null(beta)) {
-    beta_prior_mean <- NULL
-    beta_prior_precision <- NULL
-  }
-
-  if (!is.null(attenuation_variables)) {
-    attenuation_factor <- interaction(
+  attenuation_variables,
+  attenuation_factor = if (!missing(attenuation_variables)) {
+    interaction(
       as.list(soundings[attenuation_variables]),
       sep = ':'
     )
   } else {
-    attenuation_factor <- factor(rep(1, nrow(soundings)))
-    gamma <- 1
-    gamma_prior <- NULL
-  }
+    factor(rep(1, nrow(soundings)))
+  },
+  measurement_variance = soundings$xco2_error ^ 2,
+  measurement_precision = Diagonal(
+    nrow(soundings),
+    1 / measurement_variance
+  ),
+  A = model.matrix(biases, soundings)[, -1, drop = FALSE],
+  beta,
+  beta_prior_mean = 0,
+  beta_prior_variance = 4,
+  beta_prior_precision = Diagonal(
+    ncol(A),
+    1 / beta_prior_variance
+  ),
+  gamma,
+  gamma_prior = gamma_quantile_prior(0.1, 1.9)
+) {
+  beta_prior_mean <- .recycle_vector_to(beta_prior_mean, ncol(A))
 
-  structure(.remove_nulls(mget(c(
+  stopifnot(nrow(C) == nrow(soundings))
+  stopifnot(nrow(attenuation_factor) == nrow(soundings))
+  stopifnot(nrow(measurement_precision) == nrow(soundings))
+  stopifnot(ncol(measurement_precision) == nrow(soundings))
+  stopifnot(nrow(A) == nrow(soundings))
+  if (!missing(beta)) {
+    stopifnot(length(beta) == ncol(A))
+  }
+  stopifnot(ncol(beta_prior_precision) == ncol(A))
+  stopifnot(nrow(beta_prior_precision) == ncol(A))
+  if (!missing(gamma)) {
+    stopifnot(length(gamma) == nlevels(attenuation_factor))
+  }
+  stopifnot(length(gamma_prior) == 2)
+
+  structure(.remove_nulls_and_missing(mget(c(
     'soundings',
     'C',
     'measurement_precision',
+    'biases',
     'A',
     'beta',
     'beta_prior_mean',
     'beta_prior_precision',
+    'attenuation_variables',
     'attenuation_factor',
     'gamma',
     'gamma_prior'
@@ -56,7 +68,45 @@ flux_measurement_model <- function(
 }
 
 #' @export
-generate.flux_measurement_model <- function(model, process_sample) {
+update.flux_measurement_model <- function(model, ...) {
+  current_arguments <- .remove_nulls_and_missing(model[c(
+    'soundings',
+    'C',
+    'measurement_precision',
+    'biases',
+    'A',
+    'beta',
+    'beta_prior_mean',
+    'beta_prior_precision',
+    'attenuation_variables',
+    'attenuation_factor',
+    'gamma',
+    'gamma_prior'
+  )])
+  update_arguments <- list(...)
+
+  # Ensure that current_arguments doesn't override anything
+  terminal_arguments <- list(
+    A = c('soundings', 'biases'),
+    C = c('soundings', 'matching', 'process_model'),
+    attenuation_factor = c('soundings', 'attenuation_variables'),
+    measurement_precision = c('soundings', 'measurement_variance'),
+    beta_prior_precision = c('biases', 'beta_prior_variance')
+  )
+  for (name in names(terminal_arguments)) {
+    if (any(terminal_arguments[[name]] %in% names(update_arguments))) {
+      current_arguments[[name]] <- NULL
+    }
+  }
+
+  do.call(flux_measurement_model, .extend_list(
+    current_arguments,
+    update_arguments
+  ))
+}
+
+#' @export
+generate.flux_measurement_model <- function(model, process_model) {
   if (is.null(model[['beta']])) {
     model$beta <- (
       model$beta_prior_mean
@@ -72,37 +122,55 @@ generate.flux_measurement_model <- function(model, process_sample) {
     )
   }
 
-  D <- Diagonal(x = model$gamma[as.integer(model$attenuation_factor)])
-  epsilon_precision <- D %*% model$measurement_precision
-  epsilon <- .sample_normal_precision(epsilon_precision)
-
-  output <- c(
-    model[c('beta', 'gamma')],
-    mget('epsilon')
-  )
-
-  if (!missing(process_sample)) {
-    output$Z2_tilde <- as.vector(
-      model$C %*% process_sample$Y2_tilde
+  if (!missing(process_model)) {
+    epsilon <- .sample_normal_precision(.make_Q_epsilon(model)(model))
+    model$soundings$xco2 <- as.vector(
+      model$C %*% calculate(process_model, 'Y2')
       + model$A %*% model$beta
       + epsilon
     )
   }
 
-  output
+  model
 }
 
 #' @export
-anomaly <- function(measurement_model, process_model) {
-  (
-    measurement_model$soundings$xco2
-    - as.vector(measurement_model$C %*% process_model$control$xco2)
-  )
+filter.flux_measurement_model <- function(model, expr) {
+  expr_s <- substitute(expr)
+  indices <- eval(expr_s, model$soundings, parent.frame())
+
+  model$soundings <- model$soundings[indices, , drop = FALSE]
+  model$A <- model$A[indices, , drop = FALSE]
+  model$C <- model$C[indices, , drop = FALSE]
+  model$measurement_precision <- model$measurement_precision[
+    indices,
+    indices,
+    drop = FALSE
+  ]
+  model$attenuation_factor <- model$attenuation_factor[indices]
+
+  model
+}
+
+#' @export
+calculate.flux_measurement_model <- function(
+  x,
+  name = c('Z2_tilde', 'Z2_tilde_debiased'),
+  process_model,
+  parameters = x
+) {
+  name <- match.arg(name)
+
+  if (name == 'Z2_tilde') {
+    x$soundings$xco2 - as.vector(x$C %*% process_model$control$xco2)
+  } else if (name == 'Z2_tilde_debiased') {
+    calculate(x, 'Z2_tilde', process_model) - as.vector(x$A %*% parameters$beta)
+  }
 }
 
 #' @export
 log_prior.flux_measurement_model <- function(model, gamma) {
-  if (is.null(model$gamma)) {
+  if (is.null(model[['gamma']])) {
     sum(dgamma(
       gamma,
       shape = model$gamma_prior[1],

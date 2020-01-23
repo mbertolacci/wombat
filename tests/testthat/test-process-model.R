@@ -1,6 +1,6 @@
 context('process-model')
 
-test_that('process model outputs have correct dimensions', {
+test_that('components have correct dimensions', {
   model <- flux_process_model(emissions, control, sensitivities)
   for (name in c('emissions', 'control', 'a_prior', 'w_prior')) {
     expect_false(is.null(model[[name]]))
@@ -15,16 +15,19 @@ test_that('process model outputs have correct dimensions', {
   expect_equal(dim(model$eta_prior_precision), rep(ncol(model$Psi), 2))
 })
 
-test_that('flux process model samples have correct dimensions', {
+test_that('samples have correct dimensions', {
   model <- flux_process_model(emissions, control, sensitivities)
   process_sample <- generate(model)
   expect_length(process_sample$a, 1)
   expect_length(process_sample$alpha, ncol(model$H))
-  expect_equal(
-    dim(process_sample$Q_alpha),
-    rep(ncol(model$H), 2)
-  )
   expect_length(process_sample$eta, ncol(model$Psi))
-  expect_length(process_sample$Y1_tilde, nrow(model$emissions))
-  expect_length(process_sample$Y2_tilde, nrow(model$control))
+})
+
+test_that('update works', {
+  model <- flux_process_model(emissions, control, sensitivities)
+  updated_model <- update(model, lag = months(1), eta = 1, alpha = 1)
+
+  expect_false(max(abs(updated_model$H - model$H)) == 0)
+  expect_equal(updated_model$alpha, rep(1, ncol(model$H)))
+  expect_equal(updated_model$eta, rep(1, ncol(model$Psi)))
 })

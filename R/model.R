@@ -23,7 +23,7 @@
 }
 
 .alpha_beta_eta_hat <- function(current, measurement_model, process_model) {
-  Z <- anomaly(measurement_model, process_model)
+  Z2_tilde <- calculate(measurement_model, 'Z2_tilde', process_model)
 
   C <- measurement_model$C
   X <- cbind(
@@ -52,7 +52,7 @@
   .log_trace('Finding chol_Q_omega')
   chol_Q_omega_post <- chol(Q_omega + crossprod(sqrt(Q_epsilon) %*% X))
   omega_hat <- .chol_solve(chol_Q_omega_post, as.vector(
-    crossprod(X, Q_epsilon %*% Z)
+    crossprod(X, Q_epsilon %*% Z2_tilde)
   ))
 
   list(
@@ -62,7 +62,7 @@
     } else {
       NULL
     },
-    eta = tail(omega_hat, n_eta),
+    eta = as.vector(tail(omega_hat, n_eta)),
     chol_Q_omega = chol_Q_omega_post
   )
 }
