@@ -35,15 +35,16 @@ flux_process_model <- function(
     alpha <- .recycle_vector_to(alpha, ncol(H))
   }
 
-  .log_debug('Constructing emissions basis')
-  Phi <- emissions %>%
-    group_by(month_start, region) %>%
-    group_map(~ .x$flux) %>%
-    bdiag()
 
   if (!missing(w)) {
     w <- .recycle_vector_to(w, length(regions))
   }
+
+  .log_debug('Constructing emissions basis')
+  Phi <- emissions %>%
+    group_by(month_start, region) %>%
+    group_map(~ .x$flux_density) %>%
+    bdiag()
 
   eta_prior_mean <- .recycle_vector_to(eta_prior_mean, ncol(Psi))
   if (!missing(eta)) {
@@ -235,7 +236,7 @@ calculate.flux_process_model <- function(
   } else if (name == 'Y1_tilde') {
     as.vector(x$Phi %*% parameters$alpha)
   } else if (name == 'Y1') {
-    x$emissions$flux + calculate(x, 'Y1_tilde', parameters)
+    x$emissions$flux_density + calculate(x, 'Y1_tilde', parameters)
   } else if (name == 'H_alpha') {
     as.vector(x$H %*% parameters$alpha)
   }
@@ -264,6 +265,51 @@ log_prior.flux_process_model <- function(model, a, w) {
   }
 
   output
+}
+
+#' Aggregate monthly fluxes according to a constraint
+#' @export
+aggregate_flux <- function(model, filter_expr, parameters = model) {
+  filter_expr <- enquo(filter_expr)
+
+  Phi_aggregate <- model$emissions %>%
+    mutate(
+      # kgCO2 / year / m ^ 2 => PgC / year
+      flux = if_else(
+        !! filter_expr,
+        flux_density * area * 10 ^ (6 + 3 - 15) / 44.01 * 12.01,
+        0
+      )
+    ) %>%
+    group_by(month_start, region) %>%
+    summarise(
+      total_flux = sum(flux)
+    ) %>%
+    group_by(month_start) %>%
+    group_map(
+      ~ .x$total_flux
+    ) %>%
+    bdiag() %>%
+    t()
+
+  area_df <- model$emissions %>%
+    mutate(
+      area = if_else(!! filter_expr, area, 0)
+    ) %>%
+    group_by(month_start) %>%
+    summarise(
+      area = sum(area)
+    )
+
+  tibble::tibble(
+    month_start = sort(unique(model$emissions$month_start)),
+    flux = if (is.null(dim(parameters$alpha))) {
+      as.vector(Phi_aggregate %*% (parameters$alpha + 1))
+    } else {
+      as.matrix(Phi_aggregate %*% t(parameters$alpha + 1))
+    }
+  ) %>%
+    left_join(area_df, by = 'month_start')
 }
 
 .make_Q_alpha <- function(model) {

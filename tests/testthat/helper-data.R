@@ -8,7 +8,7 @@ emissions <- expand.grid(
   month_start = month_starts,
   region = regions
 ) %>%
-  mutate(flux = 0)
+  mutate(flux_density = 0)
 
 control <- data.frame(
   model_id = model_ids,
