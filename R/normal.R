@@ -28,7 +28,7 @@
 
 .sample_normal_precision_chol <- function(chol_Q) {
   if (is(chol_Q, 'triangularMatrix')) {
-    as.vector(solve(t(chol_Q), rnorm(ncol(chol_Q))))
+    as.vector(solve(chol_Q, rnorm(ncol(chol_Q))))
   } else if (is(chol_Q, 'CHMfactor')) {
     as.vector(solve(chol_Q, solve(
       chol_Q,
@@ -36,7 +36,7 @@
       system = 'Lt'
     ), system = 'Pt'))
   } else {
-    as.vector(backsolve(chol_Q, rnorm(ncol(chol_Q)), transpose = TRUE))
+    as.vector(backsolve(chol_Q, rnorm(ncol(chol_Q))))
   }
 }
 
