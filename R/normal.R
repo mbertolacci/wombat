@@ -1,12 +1,13 @@
 .log_pdf_woodbury <- function(Y, D, chol_Q, Q_small, X) {
   chol_Q_small <- chol(Q_small)
+  chol_D <- chol(D)
   log_det_Sigma_Y <- (
     2 * sum(log(diag(chol_Q)))
-    - sum(log(diag(D)))
+    - 2 * sum(log(diag(chol_D)))
     - 2 * sum(log(diag(chol_Q_small)))
   )
-  a1 <- sqrt(D@x) * Y
-  a2 <- D@x * Y
+  a1 <- as.vector(chol_D %*% Y)
+  a2 <- as.vector(D %*% Y)
   rhs <- crossprod(X, a2)
   sum_squares <- (
     sum(a1 ^ 2)
