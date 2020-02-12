@@ -29,5 +29,5 @@ sensitivities <- expand.grid(
 soundings <- data.frame(
   sounding_id = 1 : 2,
   instrument_mode = c('LN', 'LG'),
-  xco2_error = 1
+  xco2_error = c(1, 2)
 )

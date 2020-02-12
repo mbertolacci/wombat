@@ -37,6 +37,11 @@ inversion_map_em <- function(
   Xt_Q_epsilon_X <- .make_Xt_Q_epsilon_X(X, measurement_model)
   Q_epsilon <- .make_Q_epsilon(measurement_model)
   Q_alpha <- .make_Q_alpha(process_model)
+  mu_omega <- .make_mu_omega(
+    process_model,
+    measurement_model,
+    c('alpha', 'beta', 'eta')
+  )
   Q_omega <- .make_Q_omega(
     process_model,
     measurement_model,
@@ -68,6 +73,7 @@ inversion_map_em <- function(
     mu_omega_conditional <- .chol_solve(
       chol_Q_omega_conditional,
       crossprod(X, Q_epsilon(current) %*% Z2_tilde)
+      + Q_omega(current) %*% mu_omega(current)
     )
 
     E_omega_t_omega <- (
@@ -98,7 +104,7 @@ inversion_map_em <- function(
     if (find_gamma) {
       .log_trace('[%d] Optimising for gamma', iteration)
       Y_tilde <- as.vector(
-        sqrt(measurement_model$measurement_precision)
+        chol(measurement_model$measurement_precision)
         %*% (Z2_tilde - X %*% mu_omega_conditional)
       )
 
@@ -108,8 +114,8 @@ inversion_map_em <- function(
 
         Xt_Q_epsilon0_X_part <- Xt_Q_epsilon_X(parts = gamma_index)
 
-        shape <- measurement_model$gamma_prior[1] + n / 2
-        rate <- measurement_model$gamma_prior[2] + 0.5 * (
+        shape <- measurement_model$gamma_prior[['shape']] + n / 2
+        rate <- measurement_model$gamma_prior[['rate']] + 0.5 * (
           sum(Y_tilde[indices] ^ 2)
           - as.vector(crossprod(
             mu_omega_conditional,
@@ -132,8 +138,8 @@ inversion_map_em <- function(
         Q_omega_current,
         X
       )
-      + log_prior(process_model, current$a, current$w)
-      + log_prior(measurement_model, current$gamma)
+      + log_prior(process_model, current)
+      + log_prior(measurement_model, current)
     )
 
     step_max_abs <- max(abs(do.call(c, current) - do.call(c, previous)))

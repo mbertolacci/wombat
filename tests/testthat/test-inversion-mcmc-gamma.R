@@ -1,0 +1,61 @@
+context('inversion-mcmc-gamma')
+
+test_that('quantiles are estimated correctly', {
+  process_model <- flux_process_model(emissions, control, sensitivities)
+  soundings$xco2 <- rnorm(2)
+  measurement_model <- flux_measurement_model(
+    soundings,
+    ~ instrument_mode,
+    soundings$sounding_id,
+    process_model,
+    attenuation_variables = 'instrument_mode'
+  )
+
+  gamma_sampler <- .make_gamma_sampler(
+    measurement_model,
+    process_model
+  )
+
+  current <- list(
+    alpha = rep(0, 6),
+    eta = rep(0, 16),
+    beta = rep(0, 1)
+  )
+
+  log_gamma_conditional <- function(gamma) {
+    gamma <- c(gamma, 1)
+    current$gamma <- gamma
+
+    output <- sum(dnorm(
+      soundings$xco2,
+      sd = (
+        soundings$xco2_error
+        / sqrt(gamma[measurement_model$attenuation_factor])
+      ),
+      log = TRUE
+    )) + log_prior(measurement_model, current)
+
+    if (is.nan(output)) -Inf
+    else output
+  }
+  theoretical_quantiles <- quantiles_log_density(
+    Vectorize(log_gamma_conditional),
+    0,
+    20,
+    c(0.25, 0.5, 0.75)
+  )
+
+  n_samples <- 5000
+  warm_up <- 1000
+  gamma_samples_full <- coda::mcmc(rep(0, n_samples))
+  for (i in 1 : n_samples) {
+    current <- gamma_sampler(current, n_samples <= warm_up)
+    gamma_samples_full[i] <- current$gamma[1]
+  }
+  gamma_samples <- window(gamma_samples_full, start = warm_up + 1)
+
+  expect_true(all(abs(
+    quantile(gamma_samples, probs = c(0.25, 0.5, 0.75))
+    - theoretical_quantiles
+  ) < 0.1))
+})

@@ -34,7 +34,13 @@ flux_measurement_model <- function(
   gamma,
   gamma_prior = gamma_quantile_prior(0.1, 1.9)
 ) {
+  if (!missing(beta)) {
+    beta <- .recycle_vector_to(beta, ncol(A))
+  }
   beta_prior_mean <- .recycle_vector_to(beta_prior_mean, ncol(A))
+  if (!missing(gamma)) {
+    gamma <- .recycle_vector_to(gamma, nlevels(attenuation_factor))
+  }
 
   stopifnot(nrow(C) == nrow(soundings))
   stopifnot(nrow(attenuation_factor) == nrow(soundings))
@@ -46,10 +52,8 @@ flux_measurement_model <- function(
   }
   stopifnot(ncol(beta_prior_precision) == ncol(A))
   stopifnot(nrow(beta_prior_precision) == ncol(A))
-  if (!missing(gamma)) {
-    stopifnot(length(gamma) == nlevels(attenuation_factor))
-  }
-  stopifnot(length(gamma_prior) == 2)
+  stopifnot(is.list(gamma_prior))
+  stopifnot(length(gamma_prior) %in% c(2, 4))
 
   structure(.remove_nulls_and_missing(mget(c(
     'soundings',
@@ -87,10 +91,10 @@ update.flux_measurement_model <- function(model, ...) {
 
   # Ensure that current_arguments doesn't override anything
   terminal_arguments <- list(
-    A = c('soundings', 'biases'),
-    C = c('soundings', 'matching', 'process_model'),
-    attenuation_factor = c('soundings', 'attenuation_variables'),
-    measurement_precision = c('soundings', 'measurement_variance'),
+    A = 'biases',
+    C = c('matching', 'process_model'),
+    attenuation_factor = 'attenuation_variables',
+    measurement_precision = 'measurement_variance',
     beta_prior_precision = c('biases', 'beta_prior_variance')
   )
   for (name in names(terminal_arguments)) {
@@ -117,8 +121,8 @@ generate.flux_measurement_model <- function(model, process_model) {
   if (is.null(model[['gamma']])) {
     model$gamma <- rgamma(
       nlevels(model$attenuation_factor),
-      shape = model$gamma_prior[1],
-      rate = model$gamma_prior[2]
+      shape = model$gamma_prior[['shape']],
+      rate = model$gamma_prior[['rate']]
     )
   }
 
@@ -169,12 +173,27 @@ calculate.flux_measurement_model <- function(
 }
 
 #' @export
-log_prior.flux_measurement_model <- function(model, gamma) {
+log_prior.flux_measurement_model <- function(model, parameters = model) {
   if (is.null(model[['gamma']])) {
+    gamma <- parameters$gamma
+
+    if ('lower' %in% names(model$gamma_prior)) {
+      if (
+        any(gamma <= model$gamma_prior[['lower']])
+        || any(gamma >= model$gamma_prior[['upper']])
+      ) {
+        return(-Inf)
+      }
+    } else {
+      if (any(gamma <= 0)) {
+        return(-Inf)
+      }
+    }
+
     sum(dgamma(
       gamma,
-      shape = model$gamma_prior[1],
-      rate = model$gamma_prior[2],
+      shape = model$gamma_prior[['shape']],
+      rate = model$gamma_prior[['rate']],
       log = TRUE
     ))
   } else {
@@ -192,7 +211,7 @@ log_prior.flux_measurement_model <- function(model, gamma) {
     X_part <- X[indices, ]
     Q_epsilon0_part <- model$measurement_precision[indices, indices]
     Xt_Q_epsilon0_X_parts[[gamma_index]] <- crossprod(
-      sqrt(Q_epsilon0_part) %*% X_part
+      chol(Q_epsilon0_part) %*% X_part
     )
   }
 

@@ -6,103 +6,78 @@ inversion_mcmc <- function(
   start = NULL,
   warm_up = 100,
   tuning = list(
-    slice_a_options = list(w = 0.25, max_evaluations = 100),
-    slice_gamma_options = list(w = 1, max_evaluations = 100)
+    a = list(w = 0.25, max_evaluations = 100),
+    gamma = list(w = 1, max_evaluations = 100)
   ),
-  include_eta = TRUE,
+  marginalised_variables = NULL,
   show_progress = TRUE
 ) {
   if (!missing(tuning)) {
     tuning <- .extend_list(eval(formals(inversion_mcmc)$tuning), tuning)
   }
 
+  if (!is.null(marginalised_variables)) {
+    marginalised_variables <- match.arg(
+      marginalised_variables,
+      c('eta', 'beta'),
+      several.ok = TRUE
+    )
+  }
+  included_variables <- setdiff(
+    c('alpha', 'eta', 'beta'),
+    marginalised_variables
+  )
+
   n_alpha <- ncol(process_model$H)
+  n_eta <- ncol(process_model$Psi)
   n_beta <- ncol(measurement_model$A)
   n_times <- n_alpha / length(process_model$regions)
   n_w <- length(process_model$regions)
   n_gamma <- nlevels(measurement_model$attenuation_factor)
 
-  find_a <- is.null(process_model[['a']])
-  find_w <- is.null(process_model[['w']])
-  find_gamma <- is.null(measurement_model[['gamma']])
-
   .log_debug('Precomputing various quantities')
-  Z2_tilde <- calculate(measurement_model, 'Z2_tilde', process_model)
-  C <- measurement_model$C
-  X <- cbind(
-    C %*% process_model$H,
-    measurement_model$A
-  )
-  Psi_C <- C %*% process_model$Psi
-  Xt_Q_epsilon_X <- .make_Xt_Q_epsilon_X(X, measurement_model)
-  Psi_Ct_Q_epsilon_Psi_C <- .make_Xt_Q_epsilon_X(Psi_C, measurement_model)
-  Psi_Ct_Q_epsilon_X <- .make_A_Q_epsilon_B(t(Psi_C), X, measurement_model)
-  Q_epsilon <- .make_Q_epsilon(measurement_model)
-  Q_alpha <- .make_Q_alpha(process_model)
-  Q_omega <- .make_Q_omega(
-    process_model,
+  omega_sampler <- .make_omega_sampler(
     measurement_model,
-    c('alpha', 'beta')
+    process_model,
+    variables = included_variables
   )
-  chol_Q_eta_conditional <- memoise::memoise(function(params) {
-    chol(.fast_add(
-      process_model$eta_prior_precision,
-      Psi_Ct_Q_epsilon_Psi_C(params)
-    ))
-  }, cache = .cache_memory_fifo())
-
-  sample_eta <- function(current) {
-    chol_Q_eta_conditional_i <- chol_Q_eta_conditional(current)
-    mu_eta_conditional <- as.vector(.chol_solve(
-      chol_Q_eta_conditional_i,
-      crossprod(Psi_C, Q_epsilon(current) %*% (
-        Z2_tilde - X %*% c(current$alpha, current$beta)
-      ))
-    ))
-    (
-      mu_eta_conditional
-      + .sample_normal_precision_chol(chol_Q_eta_conditional_i)
-    )
-  }
+  a_sampler <- .make_a_sampler(process_model, tuning[['a']])
+  w_sampler <- .make_w_sampler(process_model)
+  gamma_sampler <- .make_gamma_sampler(
+    measurement_model,
+    process_model,
+    variables = included_variables,
+    tuning = tuning[['gamma']]
+  )
 
   .log_debug('Setting start values')
   start <- .extend_list(
     c(
-      generate(process_model)[c('alpha', 'a', 'w')],
+      generate(process_model)[c('alpha', 'eta', 'a', 'w')],
       generate(measurement_model)[c('beta', 'gamma')]
     ),
     start,
-    .remove_nulls(process_model[c('alpha', 'a', 'w')]),
+    .remove_nulls(process_model[c('alpha', 'eta', 'a', 'w')]),
     .remove_nulls(process_model[c('beta', 'gamma')])
-  )[c('alpha', 'beta', 'a', 'w', 'gamma')]
+  )[c('alpha', 'eta', 'beta', 'a', 'w', 'gamma')]
+  for (variable in marginalised_variables) {
+    start[[variable]] <- NA
+  }
 
   alpha_samples <- matrix(NA, nrow = n_iterations, ncol = n_alpha)
-  beta_samples <- matrix(NA, nrow = n_iterations, ncol = n_beta)
+  eta_samples <- matrix(NA, nrow = n_iterations, ncol = n_eta)
   a_samples <- matrix(NA, nrow = n_iterations, ncol = 1)
   w_samples <- matrix(NA, nrow = n_iterations, ncol = n_w)
+  beta_samples <- matrix(NA, nrow = n_iterations, ncol = n_beta)
   gamma_samples <- matrix(NA, nrow = n_iterations, ncol = n_gamma)
-  if (include_eta) {
-    eta_samples <- matrix(NA, nrow = n_iterations, ncol = ncol(Psi_C))
-  }
 
   current <- start
   alpha_samples[1, ] <- current$alpha
-  beta_samples[1, ] <- current$beta
+  eta_samples[1, ] <- current$eta
   a_samples[1, ] <- current$a
   w_samples[1, ] <- current$w
+  beta_samples[1, ] <- current$beta
   gamma_samples[1, ] <- current$gamma
-  if (include_eta) {
-    eta_samples[1, ] <- sample_eta(current)
-  }
-
-  if (find_a) {
-    a_slice <- do.call(slice, tuning$slice_a_options)
-  }
-  if (find_gamma) {
-    gamma_slice <- lapply(seq_len(n_gamma), function(i) {
-      do.call(slice, tuning$slice_gamma_options)
-    })
-  }
 
   if (show_progress) {
     pb <- progress::progress_bar$new(
@@ -118,116 +93,24 @@ inversion_mcmc <- function(
       pb$tick()
     }
 
-    .log_trace('[%d/%d] Sampling alpha and beta', iteration, n_iterations)
-    chol_Q_eta_conditional_i <- chol_Q_eta_conditional(current)
-    chol_Q_omega_conditional <- chol(
-      Q_omega(current)
-      + Xt_Q_epsilon_X(current)
-      - crossprod(solve(
-        t(chol_Q_eta_conditional_i),
-        Psi_Ct_Q_epsilon_X(current)
-      ))
-    )
-    mu_omega_conditional <- as.vector(.chol_solve(
-      chol_Q_omega_conditional,
-      crossprod(
-        X,
-        Q_epsilon(current) %*% (
-          Z2_tilde - Psi_C %*% .chol_solve(
-            chol_Q_eta_conditional_i,
-            crossprod(Psi_C, Q_epsilon(current) %*% Z2_tilde)
-          )
-        )
-      )
-    ))
-    omega <- (
-      mu_omega_conditional
-      + .sample_normal_precision_chol(chol_Q_omega_conditional)
-    )
-    current$alpha <- head(omega, n_alpha)
-    current$beta <- tail(omega, n_beta)
+    .log_trace('[%d/%d] Sampling omega', iteration, n_iterations)
+    current <- omega_sampler(current)
 
-    if (find_a) {
-      .log_trace('[%d/%d] Sampling a', iteration, n_iterations)
-      output <- a_slice(current$a, function(a) {
-        if (a <= 0 || a >= 1) return(-Inf)
-        current2 <- current
-        current2$a <- a
+    .log_trace('[%d/%d] Sampling a', iteration, n_iterations)
+    current <- a_sampler(current, iteration <= warm_up)
 
-        output <- (
-          .log_pdf_precision_cholesky(current$alpha, chol(Q_alpha(current2)))
-          + log_prior(process_model, a, current$w)
-        )
-        output
-      }, learn = (iteration <= warm_up), include_n_evaluations = TRUE)
-      .log_trace(
-        '[%d/%d] a took %d evaluations, w = %f',
-        iteration, n_iterations, output$n_evaluations, output$w
-      )
+    .log_trace('[%d/%d] Sampling w', iteration, n_iterations)
+    current <- w_sampler(current)
 
-      current$a <- output$sample
-    }
-
-    if (find_w) {
-      .log_trace('[%d/%d] Sampling w', iteration, n_iterations)
-      chol_Q_alpha_t <- chol(ar1_Q(n_times, current$a))
-      alpha_matrix <- matrix(current$alpha, nrow = n_times, byrow = TRUE)
-      current$w <- rgamma(
-        n_w,
-        shape = process_model$w_prior[1] + 0.5 * n_times,
-        rate = (
-          process_model$w_prior[2]
-          + 0.5 * colSums((chol_Q_alpha_t %*% alpha_matrix) ^ 2)
-        )
-      )
-    }
-
-    if (find_gamma) {
-      .log_trace('[%d/%d] Sampling gamma', iteration, n_iterations)
-      Z_tilde <- as.vector(Z2_tilde - X %*% c(current$alpha, current$beta))
-      current$gamma <- sapply(1 : n_gamma, function(i) {
-        output <- gamma_slice[[i]](current$gamma[i], function(gamma_i) {
-          if (gamma_i <= 0) return(-Inf)
-          current2 <- current
-          current2$gamma[i] <- gamma_i
-
-          (
-            .log_pdf_woodbury(
-              Z_tilde,
-              Q_epsilon(current2),
-              chol_Q_eta_conditional(current2),
-              process_model$eta_prior_precision,
-              Psi_C
-            )
-            + log_prior(
-              measurement_model,
-              current2$gamma
-            )
-          )
-        }, learn = (iteration <= warm_up), include_n_evaluations = TRUE)
-
-        .log_trace(
-          '[%d/%d] gamma[%d] took %d evaluations, w = %f',
-          iteration, n_iterations, i, output$n_evaluations, output$w
-        )
-
-        output$sample
-      })
-    }
-
-    if (include_eta) {
-      .log_trace('[%d/%d] Sampling eta', iteration, n_iterations)
-      current$eta <- sample_eta(current)
-    }
+    .log_trace('[%d/%d] Sampling gamma', iteration, n_iterations)
+    current <- gamma_sampler(current, iteration <= warm_up)
 
     alpha_samples[iteration, ] <- current$alpha
-    beta_samples[iteration, ] <- current$beta
+    eta_samples[iteration, ] <- current$eta
     a_samples[iteration, ] <- current$a
     w_samples[iteration, ] <- current$w
+    beta_samples[iteration, ] <- current$beta
     gamma_samples[iteration, ] <- current$gamma
-    if (include_eta) {
-      eta_samples[iteration, ] <- current$eta
-    }
   }
 
   region_month <- expand.grid(
@@ -239,26 +122,23 @@ inversion_mcmc <- function(
     region_month$region,
     region_month$month_index
   )
-  colnames(beta_samples) <- sprintf('beta[%d]', seq_len(ncol(beta_samples)))
+  colnames(eta_samples) <- sprintf('eta[%d]', seq_len(ncol(eta_samples)))
   colnames(a_samples) <- 'a'
   colnames(w_samples) <- sprintf('w[%d]', seq_len(ncol(w_samples)))
+  colnames(beta_samples) <- sprintf('beta[%d]', seq_len(ncol(beta_samples)))
   colnames(gamma_samples) <- sprintf('gamma[%d]', seq_len(ncol(gamma_samples)))
 
-  output <- structure(
+  structure(
     list(
       alpha = coda::mcmc(alpha_samples),
-      beta = coda::mcmc(beta_samples),
+      eta = coda::mcmc(eta_samples),
       a = coda::mcmc(a_samples),
       w = coda::mcmc(w_samples),
+      beta = coda::mcmc(beta_samples),
       gamma = coda::mcmc(gamma_samples)
     ),
     class = 'flux_inversion_mcmc'
   )
-  if (include_eta) {
-    colnames(eta_samples) <- sprintf('eta[%d]', seq_len(ncol(eta_samples)))
-    output$eta <- coda::mcmc(eta_samples)
-  }
-  output
 }
 
 #' @export
@@ -322,11 +202,16 @@ plot_traces <- function(object, n_columns = 4) {
 
   alpha_subset <- object$alpha[
     ,
-    seq(1, ncol(object$alpha), length.out = 8)
+    seq(1, ncol(object$alpha), by = ceiling(ncol(object$alpha) / 8))
+  ]
+  eta_subset <- object$eta[
+    ,
+    seq(1, ncol(object$eta), by = ceiling(ncol(object$eta) / 8))
   ]
 
   gridExtra::grid.arrange(
     trace_plot(alpha_subset),
+    trace_plot(eta_subset),
     trace_plot(object$beta),
     trace_plot(object$a),
     trace_plot(object$w),
@@ -335,6 +220,7 @@ plot_traces <- function(object, n_columns = 4) {
     bottom = 'Iteration',
     heights = ceiling(c(
       ncol(alpha_subset),
+      ncol(eta_subset),
       ncol(object$beta),
       n_columns,
       ncol(object$w),

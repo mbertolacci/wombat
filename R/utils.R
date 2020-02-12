@@ -28,7 +28,7 @@ gamma_quantile_prior <- function(
   # Find the rate parameter that gives the correct quantiles
   rate <- qgamma(p_upper, shape = shape, rate = 1) / q_upper
 
-  c(shape, rate)
+  list(shape = shape, rate = rate)
 }
 
 #' @export

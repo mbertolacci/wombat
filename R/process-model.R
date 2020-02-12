@@ -11,6 +11,7 @@ flux_process_model <- function(
     lag
   ),
   alpha,
+  alpha_prior_mean = 0,
   a,
   a_prior = c(0.5, 1),
   w,
@@ -35,6 +36,7 @@ flux_process_model <- function(
     alpha <- .recycle_vector_to(alpha, ncol(H))
   }
 
+  alpha_prior_mean <- .recycle_vector_to(alpha_prior_mean, ncol(H))
 
   if (!missing(w)) {
     w <- .recycle_vector_to(w, length(regions))
@@ -53,7 +55,8 @@ flux_process_model <- function(
 
   stopifnot(ncol(H) == ncol(Phi))
   stopifnot(length(a_prior) == 2)
-  stopifnot(length(w_prior) == 2)
+  stopifnot(is.list(w_prior))
+  stopifnot(length(w_prior) == 2 || length(w_prior) == 4)
   stopifnot(nrow(eta_prior_precision) == ncol(Psi))
   stopifnot(ncol(eta_prior_precision) == ncol(Psi))
 
@@ -66,6 +69,7 @@ flux_process_model <- function(
     'Phi',
     'regions',
     'alpha',
+    'alpha_prior_mean',
     'a',
     'a_prior',
     'w',
@@ -86,6 +90,7 @@ update.flux_process_model <- function(model, ...) {
     'lag',
     'H',
     'alpha',
+    'alpha_prior_mean',
     'a',
     'a_prior',
     'w',
@@ -166,7 +171,8 @@ latitudinal_random_effects <- function(
   df,
   n_latitude_bands = 5,
   latitude_basis_scale = 50,
-  time_varying = TRUE
+  time_varying = TRUE,
+  intercept = TRUE
 ) {
   .log_debug('Contructing basis and design matrix')
   basis <- FRK::local_basis(
@@ -176,7 +182,7 @@ latitudinal_random_effects <- function(
   )
   df <- df %>% arrange(model_id)
   if (time_varying) {
-    Psi <- df %>%
+    output <- df %>%
       select(time, latitude) %>%
       mutate(month_start = to_month_start(time)) %>%
       group_by(month_start) %>%
@@ -185,13 +191,16 @@ latitudinal_random_effects <- function(
       ) %>%
       bdiag()
   } else {
-    Psi <- FRK::eval_basis(basis, as.matrix(df$latitude))
+    output <- FRK::eval_basis(basis, as.matrix(df$latitude))
   }
 
-  output <- cbind(1, Psi)
+  if (intercept) {
+    output <- cbind(1, output)
+  }
   attr(output, 'is_latitudinal') <- TRUE
   attr(output, 'n_latitude_bands') <- n_latitude_bands
   attr(output, 'time_varying') <- time_varying
+  attr(output, 'intercept') <- intercept
   attr(output, 'basis') <- basis
   output
 }
@@ -203,10 +212,12 @@ generate.flux_process_model <- function(model) {
   }
 
   if (is.null(model[['w']])) {
+    # Not yet supported
+    stopifnot(!('lower' %in% model$w_prior))
     model$w <- rgamma(
       length(model$regions),
-      shape = model$w_prior[1],
-      rate = model$w_prior[2]
+      shape = model$w_prior[['shape']],
+      rate = model$w_prior[['rate']]
     )
   }
 
@@ -243,12 +254,14 @@ calculate.flux_process_model <- function(
 }
 
 #' @export
-log_prior.flux_process_model <- function(model, a, w) {
+log_prior.flux_process_model <- function(model, parameters = model) {
   output <- 0
 
   if (is.null(model[['a']])) {
+    if (parameters$a <= 0 || parameters$a >= 1) return(-Inf)
+
     output <- output + dnorm(
-      a,
+      parameters$a,
       mean = model$a_prior[1],
       sd = model$a_prior[2],
       log = TRUE
@@ -256,10 +269,12 @@ log_prior.flux_process_model <- function(model, a, w) {
   }
 
   if (is.null(model[['w']])) {
+    if (any(parameters$w <= 0)) return(-Inf)
+
     output <- output + sum(dgamma(
-      w,
-      shape = model$w_prior[1],
-      rate = model$w_prior[2],
+      parameters$w,
+      shape = model$w_prior[['shape']],
+      rate = model$w_prior[['rate']],
       log = TRUE
     ))
   }

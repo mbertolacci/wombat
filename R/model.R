@@ -1,10 +1,72 @@
+.make_omega_parts <- function(
+  process_model,
+  measurement_model,
+  variables = c('alpha', 'beta', 'eta')
+) {
+  n_parts <- c(
+    alpha = ncol(process_model$H),
+    beta = ncol(measurement_model$A),
+    eta = ncol(process_model$Psi)
+  )
+  do.call(c, lapply(variables, function(variable) {
+    rep(variable, n_parts[variable])
+  }))
+}
+
+.make_omega <- function(
+  process_model,
+  measurement_model,
+  variables = c('alpha', 'beta', 'eta')
+) {
+  omega_parts <- .make_omega_parts(process_model, measurement_model, variables)
+
+  function(parameters) {
+    omega <- rep(0, length(omega_parts))
+    for (variable in variables) {
+      omega[omega_parts == variable] <- parameters[[variable]]
+    }
+    omega
+  }
+}
+
+.make_omega_unpack <- function(
+  process_model,
+  measurement_model,
+  variables = c('alpha', 'beta', 'eta')
+) {
+  omega_parts <- .make_omega_parts(process_model, measurement_model, variables)
+
+  function(parameters, omega) {
+    for (variable in variables) {
+      parameters[[variable]] <- omega[omega_parts == variable]
+    }
+    parameters
+  }
+}
+
+.make_mu_omega <- function(
+  process_model,
+  measurement_model,
+  variables = c('alpha', 'beta', 'eta')
+) {
+  function(params) {
+    do.call(c, lapply(variables, function(variable) {
+      if (variable == 'alpha') {
+        process_model$alpha_prior_mean
+      } else if (variable == 'beta') {
+        measurement_model$beta_prior_mean
+      } else if (variable == 'eta') {
+        process_model$eta_prior_mean
+      }
+    }))
+  }
+}
+
 .make_Q_omega <- function(
   process_model,
   measurement_model,
   variables = c('alpha', 'beta', 'eta')
 ) {
-  variables <- match.arg(variables, several.ok = TRUE)
-
   if ('alpha' %in% variables) {
     Q_alpha <- .make_Q_alpha(process_model)
   }
@@ -19,6 +81,35 @@
         process_model$eta_prior_precision
       }
     }))
+  }
+}
+
+.make_X_omega <- function(
+  process_model,
+  measurement_model,
+  variables = c('alpha', 'beta', 'eta')
+) {
+  do.call(cbind, lapply(variables, function(variable) {
+    if (variable == 'alpha') {
+      measurement_model$C %*% process_model$H
+    } else if (variable == 'beta') {
+      measurement_model$A
+    } else if (variable == 'eta') {
+      measurement_model$C %*% process_model$Psi
+    }
+  }))
+}
+
+.make_chol_Q_omega_conditional <- function(
+  process_model,
+  measurement_model,
+  variables = c('alpha', 'beta', 'eta'),
+  X = .make_X_omega(process_model, measurement_model, variables),
+  Xt_Q_epsilon_X = .make_Xt_Q_epsilon_X(X, measurement_model),
+  Q_omega = .make_Q_omega(process_model, measurement_model, variables)
+) {
+  function(parameters) {
+    chol(.fast_add(Q_omega(parameters), Xt_Q_epsilon_X(parameters)))
   }
 }
 
@@ -50,7 +141,7 @@
   )
 
   .log_trace('Finding chol_Q_omega')
-  chol_Q_omega_post <- chol(Q_omega + crossprod(sqrt(Q_epsilon) %*% X))
+  chol_Q_omega_post <- chol(Q_omega + crossprod(chol(Q_epsilon) %*% X))
   omega_hat <- .chol_solve(chol_Q_omega_post, as.vector(
     crossprod(X, Q_epsilon %*% Z2_tilde)
   ))
