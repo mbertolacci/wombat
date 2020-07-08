@@ -27,6 +27,7 @@ geom_world <- function(
     colour = colour,
     size = size,
     inherit.aes = inherit.aes,
+    na.rm = TRUE,
     ...
   )
 }
