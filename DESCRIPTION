@@ -17,20 +17,24 @@ Imports:
     armspp,
     coda,
     dplyr,
-    futile.logger,
+    logger,
     lubridate,
     Rcpp,
     ggplot2,
     memoise,
     digest,
-    sf
+    sf,
+    progress,
+    tidyr
 RoxygenNote: 6.1.1
 Suggests: 
     testthat,
     lintr,
     shiny,
     shinyWidgets,
-    colourpicker
+    colourpicker,
+    rnaturalearth,
+    rnaturalearthdata
 LinkingTo: 
     Rcpp,
     RcppEigen,

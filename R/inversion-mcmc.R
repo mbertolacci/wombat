@@ -35,7 +35,7 @@ inversion_mcmc <- function(
   n_w <- length(process_model$regions)
   n_gamma <- nlevels(measurement_model$attenuation_factor)
 
-  .log_debug('Precomputing various quantities')
+  log_debug('Precomputing various quantities')
   omega_sampler <- .make_omega_sampler(
     measurement_model,
     process_model,
@@ -50,10 +50,13 @@ inversion_mcmc <- function(
     tuning = tuning[['gamma']]
   )
 
-  .log_debug('Setting start values')
+  log_debug('Setting start values')
+  generated_process_model <- generate(process_model)[
+    c('alpha', 'eta', 'a', 'w')
+  ]
   start <- .extend_list(
     c(
-      generate(process_model)[c('alpha', 'eta', 'a', 'w')],
+      generated_process_model,
       generate(measurement_model)[c('beta', 'gamma')]
     ),
     start,
@@ -62,6 +65,9 @@ inversion_mcmc <- function(
   )[c('alpha', 'eta', 'beta', 'a', 'w', 'gamma')]
   for (variable in marginalised_variables) {
     start[[variable]] <- NA
+  }
+  if (any(is.na(start$w))) {
+    start$w[is.na(start$w)] <- generated_process_model$w[is.na(start$w)]
   }
 
   alpha_samples <- matrix(NA, nrow = n_iterations, ncol = n_alpha)
@@ -87,22 +93,22 @@ inversion_mcmc <- function(
     pb$tick()
   }
 
-  .log_debug('Starting sampler')
+  log_debug('Starting sampler')
   for (iteration in 2 : n_iterations) {
     if (show_progress) {
       pb$tick()
     }
 
-    .log_trace('[%d/%d] Sampling omega', iteration, n_iterations)
+    log_trace('[%d/%d] Sampling omega', iteration, n_iterations)
     current <- omega_sampler(current)
 
-    .log_trace('[%d/%d] Sampling a', iteration, n_iterations)
+    log_trace('[%d/%d] Sampling a', iteration, n_iterations)
     current <- a_sampler(current, iteration <= warm_up)
 
-    .log_trace('[%d/%d] Sampling w', iteration, n_iterations)
+    log_trace('[%d/%d] Sampling w', iteration, n_iterations)
     current <- w_sampler(current)
 
-    .log_trace('[%d/%d] Sampling gamma', iteration, n_iterations)
+    log_trace('[%d/%d] Sampling gamma', iteration, n_iterations)
     current <- gamma_sampler(current, iteration <= warm_up)
 
     alpha_samples[iteration, ] <- current$alpha
@@ -115,7 +121,7 @@ inversion_mcmc <- function(
 
   region_month <- expand.grid(
     region = process_model$regions,
-    month_index = seq_len(length(unique(process_model$emissions$month_start)))
+    month_index = seq_len(length(unique(process_model$control_emissions$month_start)))
   )
   colnames(alpha_samples) <- sprintf(
     'alpha[%d, %d]',
@@ -125,7 +131,7 @@ inversion_mcmc <- function(
   colnames(eta_samples) <- sprintf('eta[%d]', seq_len(ncol(eta_samples)))
   colnames(a_samples) <- 'a'
   colnames(w_samples) <- sprintf('w[%d]', seq_len(ncol(w_samples)))
-  colnames(beta_samples) <- sprintf('beta[%d]', seq_len(ncol(beta_samples)))
+  colnames(beta_samples) <- colnames(measurement_model$A)
   colnames(gamma_samples) <- sprintf('gamma[%d]', seq_len(ncol(gamma_samples)))
 
   structure(
@@ -210,18 +216,20 @@ plot_traces <- function(object, n_columns = 4) {
   ]
 
   gridExtra::grid.arrange(
-    trace_plot(alpha_subset),
-    trace_plot(eta_subset),
-    trace_plot(object$beta),
-    trace_plot(object$a),
-    trace_plot(object$w),
-    trace_plot(object$gamma),
+    grobs = .remove_nulls(list(
+      trace_plot(alpha_subset),
+      trace_plot(eta_subset),
+      if (ncol(object$beta) > 0) trace_plot(object$beta) else NULL,
+      trace_plot(object$a),
+      trace_plot(object$w),
+      trace_plot(object$gamma)
+    )),
     left = 'Value',
     bottom = 'Iteration',
     heights = ceiling(c(
       ncol(alpha_subset),
       ncol(eta_subset),
-      ncol(object$beta),
+      if (ncol(object$beta) > 0) ncol(object$beta) else NULL,
       n_columns,
       ncol(object$w),
       ncol(object$gamma)

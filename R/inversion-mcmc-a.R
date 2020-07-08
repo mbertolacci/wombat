@@ -27,7 +27,7 @@
       )
     }, learn = warming_up, include_n_evaluations = TRUE)
 
-    .log_trace(
+    log_trace(
       'a sampler took %d evaluations, w = %f',
       output$n_evaluations, output$w
     )

@@ -140,7 +140,7 @@
     process_model$eta_prior_precision
   )
 
-  .log_trace('Finding chol_Q_omega')
+  log_trace('Finding chol_Q_omega')
   chol_Q_omega_post <- chol(Q_omega + crossprod(chol(Q_epsilon) %*% X))
   omega_hat <- .chol_solve(chol_Q_omega_post, as.vector(
     crossprod(X, Q_epsilon %*% Z2_tilde)

@@ -18,7 +18,6 @@ SEXP fast_add3(Rcpp::S4 a_, Rcpp::S4 b_) {
 
     double one[] = {1, 0};
 
-    // Rcpp::Rcout << "add\n";
     CHM_SP ans = cholmod_add(
         a, b, one, one,
         TRUE,

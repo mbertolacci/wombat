@@ -1,11 +1,4 @@
 .make_w_sampler <- function(model) {
-  if (!is.null(model[['w']])) {
-    return(function(current, ...) {
-      current$w <- model[['w']]
-      current
-    })
-  }
-
   n_times <- ncol(model$H) / length(model$regions)
   n_w <- length(model$regions)
 
@@ -30,6 +23,10 @@
         + 0.5 * colSums((chol_Q_alpha_t %*% alpha_matrix) ^ 2)
       )
     )
+    if (!is.null(model[['w']])) {
+      has_preset <- !is.na(model$w)
+      current$w[has_preset] <- model$w[has_preset]
+    }
     current
   }
 }

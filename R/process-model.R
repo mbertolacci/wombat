@@ -1,12 +1,13 @@
 #' @export
 flux_process_model <- function(
-  emissions,
-  control,
+  control_emissions,
+  control_mole_fraction,
+  perturbations,
   sensitivities,
   lag = months(3),
   H = transport_matrix(
-    emissions,
-    control,
+    perturbations,
+    control_mole_fraction,
     sensitivities,
     lag
   ),
@@ -16,21 +17,31 @@ flux_process_model <- function(
   a_prior = c(0.5, 1),
   w,
   w_prior = gamma_quantile_prior(1 / 10 ^ 2, 1 / 0.1 ^ 2),
-  Psi = latitudinal_random_effects(control),
+  Psi = latitudinal_random_effects(control_mole_fraction),
   eta,
   eta_prior_mean = 0,
   eta_prior_variance = 4,
   eta_prior_precision = Diagonal(ncol(Psi), 1 / eta_prior_variance)
 ) {
-  control <- control %>%
-    arrange(model_id) %>%
-    mutate(month_start = to_month_start(time))
+  stopifnot_within <- function(x, y) {
+    stopifnot(
+      all(x %in% y) && all(y %in% x)
+    )
+  }
 
-  stopifnot(!is.unsorted(control$time))
+  stopifnot_within(control_emissions$model_id, perturbations$model_id)
+  stopifnot_within(perturbations$from_month_start, sensitivities$from_month_start)
+  stopifnot_within(perturbations$region, sensitivities$region)
+  stopifnot_within(sensitivities$model_id, control_mole_fraction$model_id)
 
-  regions <- sort(unique(emissions$region))
-  emissions <- emissions %>%
-    arrange(month_start, region)
+  control_mole_fraction <- control_mole_fraction %>%
+    arrange(model_id)
+
+  stopifnot(!is.unsorted(control_mole_fraction$time))
+
+  regions <- sort(unique(perturbations$region))
+  perturbations <- perturbations %>%
+    arrange(from_month_start, region, model_id)
 
   if (!missing(alpha)) {
     alpha <- .recycle_vector_to(alpha, ncol(H))
@@ -42,11 +53,24 @@ flux_process_model <- function(
     w <- .recycle_vector_to(w, length(regions))
   }
 
-  .log_debug('Constructing emissions basis')
-  Phi <- emissions %>%
-    group_by(month_start, region) %>%
-    group_map(~ .x$flux_density) %>%
-    bdiag()
+  log_debug('Constructing perturbations basis')
+  row_indices <- control_emissions %>%
+    mutate(i = 1 : n()) %>%
+    select(model_id, i)
+  column_indices <- expand.grid(
+    region = regions,
+    from_month_start = sort(unique(perturbations$from_month_start))
+  ) %>%
+    mutate(j = 1 : n())
+  Phi_df <- perturbations %>%
+    left_join(row_indices, by = 'model_id') %>%
+    left_join(column_indices, by = c('from_month_start', 'region'))
+  Phi <- sparseMatrix(
+    i = Phi_df$i,
+    j = Phi_df$j,
+    x = Phi_df$flux_density,
+    dims = c(nrow(control_emissions), nrow(column_indices))
+  )
 
   eta_prior_mean <- .recycle_vector_to(eta_prior_mean, ncol(Psi))
   if (!missing(eta)) {
@@ -61,8 +85,9 @@ flux_process_model <- function(
   stopifnot(ncol(eta_prior_precision) == ncol(Psi))
 
   structure(.remove_nulls_and_missing(mget(c(
-    'emissions',
-    'control',
+    'control_emissions',
+    'control_mole_fraction',
+    'perturbations',
     'sensitivities',
     'lag',
     'H',
@@ -84,8 +109,9 @@ flux_process_model <- function(
 #' @export
 update.flux_process_model <- function(model, ...) {
   current_arguments <- .remove_nulls_and_missing(model[c(
-    'emissions',
-    'control',
+    'control_emissions',
+    'control_mole_fraction',
+    'perturbations',
     'sensitivities',
     'lag',
     'H',
@@ -104,9 +130,9 @@ update.flux_process_model <- function(model, ...) {
 
   # Ensure that current_arguments doesn't override anything
   terminal_arguments <- list(
-    H = c('emissions', 'control', 'sensitivities', 'lag'),
-    Psi = c('control'),
-    eta_prior_precision = c('control', 'Psi')
+    H = c('perturbations', 'control_mole_fraction', 'sensitivities', 'lag'),
+    Psi = c('control_mole_fraction'),
+    eta_prior_precision = c('control_mole_fraction', 'Psi')
   )
   for (name in names(terminal_arguments)) {
     if (any(terminal_arguments[[name]] %in% names(update_arguments))) {
@@ -122,34 +148,34 @@ update.flux_process_model <- function(model, ...) {
 
 #' @export
 transport_matrix <- function(
-  emissions,
-  control,
+  perturbations,
+  control_mole_fraction,
   sensitivities,
   lag = months(3)
 ) {
-  .log_debug('Truncating sensitivities')
+  log_debug('Truncating sensitivities')
   # NOTE(mgnb): do lag computation on the month_start from control because it's
   # much shorter than doing it after it's joined to sensitivities
-  control_month_start_lag <- control$month_start - lag
+  control_month_start_lag <- to_month_start(control_mole_fraction$time) - lag
   truncated_sensitivities <- sensitivities %>%
     mutate(
       month_start_lag = control_month_start_lag[
-        match(model_id, control$model_id)
+        match(model_id, control_mole_fraction$model_id)
       ]
     ) %>%
     filter(
       month_start_lag <= from_month_start
     )
 
-  .log_debug('Adding row and column indices')
+  log_debug('Adding row and column indices')
   column_indices <- expand.grid(
-    region = sort(unique(emissions$region)),
-    from_month_start = sort(unique(emissions$month_start))
+    region = sort(unique(perturbations$region)),
+    from_month_start = sort(unique(perturbations$from_month_start))
   ) %>%
     mutate(column_index = 1 : n())
 
   row_indices <- data.frame(
-    model_id = sort(unique(control$model_id))
+    model_id = sort(unique(control_mole_fraction$model_id))
   ) %>%
     mutate(row_index = 1 : n())
 
@@ -157,12 +183,12 @@ transport_matrix <- function(
     left_join(column_indices, by = c('region', 'from_month_start')) %>%
     left_join(row_indices, by = c('model_id'))
 
-  .log_debug('Constructing transport matrix')
+  log_debug('Constructing transport matrix')
   sparseMatrix(
     i = indexed_sensitivities$row_index,
     j = indexed_sensitivities$column_index,
-    x = indexed_sensitivities$xco2_sensitivity,
-    dims = c(nrow(control), nrow(column_indices))
+    x = indexed_sensitivities$co2_sensitivity,
+    dims = c(nrow(control_mole_fraction), nrow(column_indices))
   )
 }
 
@@ -174,7 +200,7 @@ latitudinal_random_effects <- function(
   time_varying = TRUE,
   intercept = TRUE
 ) {
-  .log_debug('Contructing basis and design matrix')
+  log_debug('Contructing basis and design matrix')
   basis <- FRK::local_basis(
     FRK::real_line(),
     loc = matrix(seq(-90, 90, length = n_latitude_bands)),
@@ -206,27 +232,62 @@ latitudinal_random_effects <- function(
 }
 
 #' @export
-generate.flux_process_model <- function(model) {
+generate.flux_process_model <- function(model, n_samples = 1) {
   if (is.null(model[['a']])) {
-    model$a <- .rnorm_truncated(1, model$a_prior[1], model$a_prior[2], 0, 1)
-  }
-
-  if (is.null(model[['w']])) {
-    # Not yet supported
-    stopifnot(!('lower' %in% model$w_prior))
-    model$w <- rgamma(
-      length(model$regions),
-      shape = model$w_prior[['shape']],
-      rate = model$w_prior[['rate']]
+    model$a <- replicate(
+      n_samples,
+      .rnorm_truncated(1, model$a_prior[1], model$a_prior[2], 0, 1)
     )
   }
 
+  # Not yet supported
+  stopifnot(!('lower' %in% model$w_prior))
+  w_sample <- t(replicate(n_samples, rgamma(
+    length(model$regions),
+    shape = model$w_prior[['shape']],
+    rate = model$w_prior[['rate']]
+  )))
+  if (!is.null(model[['w']])) {
+    is_fixed <- which(!is.na(model$w))
+    fixed_w <- model$w[is_fixed]
+    model$w <- w_sample
+    for (i in seq_along(is_fixed)) {
+      model$w[, is_fixed[i]] <- fixed_w[i]
+    }
+  } else {
+    model$w <- w_sample
+  }
+
+  .recycle_index <- function(i, n) {
+    1 + ((i - 1) %% n)
+  }
+  .as_matrix <- function(x) {
+    if (length(dim(x)) == 2) x else t(x)
+  }
+
   if (is.null(model[['alpha']])) {
-    model$alpha <- .sample_normal_precision(.make_Q_alpha(model)(model))
+    w_matrix <- .as_matrix(model$w)
+    model$alpha <- t(sapply(seq_len(n_samples), function(index) {
+      .sample_normal_precision(.make_Q_alpha(model)(list(
+        a = model$a[.recycle_index(index, length(model$a))],
+        w = w_matrix[.recycle_index(index, nrow(w_matrix)), ]
+      )))
+    }))
   }
 
   if (is.null(model[['eta']])) {
-    model$eta <- .sample_normal_precision(model$eta_prior_precision)
+    model$eta <- t(replicate(
+      n_samples,
+      .sample_normal_precision(model$eta_prior_precision)
+    ))
+  }
+
+  simplify <- function(x) {
+    if (is.matrix(x) && nrow(x) == 1) x[1, ] else x
+  }
+
+  for (x in c('w', 'alpha', 'eta')) {
+    model[[x]] <- simplify(model[[x]])
   }
 
   model
@@ -235,21 +296,47 @@ generate.flux_process_model <- function(model) {
 #' @export
 calculate.flux_process_model <- function(
   x,
-  name = c('Y2_tilde', 'Y2', 'Y1_tilde', 'Y1', 'H_alpha'),
+  name = c('Y2_tilde', 'Y2', 'Y2_control', 'Y1_tilde', 'Y1', 'H_alpha'),
   parameters = x
 ) {
   name <- match.arg(name)
 
-  if (name == 'Y2_tilde') {
-    as.vector(x$H %*% parameters$alpha + x$Psi %*% parameters$eta)
+  parameters <- lapply(parameters[c('alpha', 'eta')], function(x) {
+    if (is.null(x)) return(x)
+    if (is.vector(x)) t(x) else as.matrix(x)
+  })
+
+  get_samples <- function(l, r) {
+    as.matrix(t(tcrossprod(l, r)))
+  }
+
+  add_rowwise <- function(x, y) {
+    if (is.vector(x) && is.matrix(y)) {
+      # HACK(mgnb): this is the easiest way to add to each row
+      t(x + t(y))
+    } else {
+      x + y
+    }
+  }
+
+  output <- if (name == 'Y2_tilde') {
+    get_samples(x$H, parameters$alpha) + get_samples(x$Psi, parameters$eta)
   } else if (name == 'Y2') {
-    x$control$xco2 + calculate(x, 'Y2_tilde', parameters)
+    add_rowwise(x$control_mole_fraction$co2, calculate(x, 'Y2_tilde', parameters))
+  } else if (name == 'Y2_control') {
+    x$control_mole_fraction$co2
   } else if (name == 'Y1_tilde') {
-    as.vector(x$Phi %*% parameters$alpha)
+    get_samples(x$Phi, parameters$alpha)
   } else if (name == 'Y1') {
-    x$emissions$flux_density + calculate(x, 'Y1_tilde', parameters)
+    add_rowwise(x$control_emissions$flux_density, calculate(x, 'Y1_tilde', parameters))
   } else if (name == 'H_alpha') {
-    as.vector(x$H %*% parameters$alpha)
+    get_samples(x$H, parameters$alpha)
+  }
+
+  if (is.matrix(output) && nrow(output) == 1) {
+    output[1, ]
+  } else {
+    output
   }
 }
 
@@ -284,32 +371,70 @@ log_prior.flux_process_model <- function(model, parameters = model) {
 
 #' Aggregate monthly fluxes according to a constraint
 #' @export
-aggregate_flux <- function(model, filter_expr, parameters = model) {
+aggregate_flux <- function(model, filter_expr = TRUE, parameters = model) {
+  if (missing(parameters) && !('alpha' %in% names(model))) {
+    parameters <- list(alpha = model$alpha_prior_mean)
+  }
+
   filter_expr <- enquo(filter_expr)
 
-  Phi_aggregate <- model$emissions %>%
+  control_aggregate <- model$control_emissions %>%
     mutate(
-      # kgCO2 / year / m ^ 2 => PgC / year
+      test_condition = !! filter_expr,
       flux = if_else(
-        !! filter_expr,
-        flux_density * area * 10 ^ (6 + 3 - 15) / 44.01 * 12.01,
+        test_condition,
+        # kgCO2 / s / m ^ 2 => PgC
+        flux_density * area * 10 ^ (3 - 15) / 44.01 * 12.01 * lubridate::days_in_month(month_start) * 24 * 60 * 60,
         0
       )
     ) %>%
-    group_by(month_start, region) %>%
+    group_by(month_start) %>%
+    summarise(
+      total_flux = sum(flux)
+    )
+
+  matching_control <- model$control_emissions %>%
+    filter(!! filter_expr)
+  row_indices <- data.frame(
+    month_start = sort(unique(model$control_emissions$month_start))
+  ) %>%
+    mutate(i = 1 : n())
+  column_indices <- expand.grid(
+    region = model$regions,
+    from_month_start = sort(unique(model$perturbations$from_month_start))
+  ) %>%
+    mutate(j = 1 : n())
+  Phi_aggregate_df <- model$perturbations %>%
+    filter(model_id %in% matching_control$model_id) %>%
+    left_join(
+      matching_control %>% select(model_id, month_start, area),
+      by = 'model_id'
+    ) %>%
+    mutate(
+      # kgCO2 / s / m ^ 2 => PgC
+      flux = flux_density * area * 10 ^ (3 - 15) / 44.01 * 12.01 * lubridate::days_in_month(month_start) * 24 * 60 * 60
+    ) %>%
+    group_by(from_month_start, region, month_start) %>%
     summarise(
       total_flux = sum(flux)
     ) %>%
-    group_by(month_start) %>%
-    group_map(
-      ~ .x$total_flux
-    ) %>%
-    bdiag() %>%
-    t()
+    left_join(row_indices, by = 'month_start') %>%
+    left_join(column_indices, by = c('from_month_start', 'region'))
 
-  area_df <- model$emissions %>%
+  Phi_aggregate <- sparseMatrix(
+    i = Phi_aggregate_df$i,
+    j = Phi_aggregate_df$j,
+    x = Phi_aggregate_df$total_flux,
+    dims = c(
+      nrow(row_indices),
+      nrow(column_indices)
+    )
+   )
+
+  area_df <- model$control_emissions %>%
     mutate(
-      area = if_else(!! filter_expr, area, 0)
+      filter_condition = !! filter_expr,
+      area = if_else(filter_condition, area, 0)
     ) %>%
     group_by(month_start) %>%
     summarise(
@@ -317,11 +442,11 @@ aggregate_flux <- function(model, filter_expr, parameters = model) {
     )
 
   tibble::tibble(
-    month_start = sort(unique(model$emissions$month_start)),
-    flux = if (is.null(dim(parameters$alpha))) {
-      as.vector(Phi_aggregate %*% (parameters$alpha + 1))
+    month_start = sort(unique(model$control_emissions$month_start)),
+    flux = if (is.vector(parameters[['alpha']])) {
+      control_aggregate$total_flux + as.vector(Phi_aggregate %*% parameters[['alpha']])
     } else {
-      as.matrix(Phi_aggregate %*% t(parameters$alpha + 1))
+      control_aggregate$total_flux + as.matrix(Phi_aggregate %*% t(parameters[['alpha']]))
     }
   ) %>%
     left_join(area_df, by = 'month_start')

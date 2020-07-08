@@ -1,7 +1,12 @@
 context('process-model')
 
 test_that('components have correct dimensions', {
-  model <- flux_process_model(emissions, control, sensitivities)
+  model <- flux_process_model(
+    control_emissions,
+    control_mole_fraction,
+    perturbations,
+    sensitivities
+  )
   for (name in c('emissions', 'control', 'a_prior', 'w_prior')) {
     expect_false(is.null(model[[name]]))
   }

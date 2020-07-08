@@ -24,3 +24,4 @@
 .fast_add3 <- function(a_, b_) {
     .Call(`_fluxcapacitor_fast_add3`, a_, b_)
 }
+

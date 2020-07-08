@@ -33,11 +33,12 @@ sensitivity_explorer_ui <- function(id, process_model) {
 
   ns <- shiny::NS(id)
 
-  transcoms <- process_model$regions
-  names(transcoms) <- sprintf('Transcom %02d', transcoms)
+  regions <- process_model$regions
+  names(regions) <- sprintf('Region %02d', regions)
 
-  emissions <- process_model$emissions
-  control <- process_model$control
+  control_emissions <- process_model$control_emissions
+  control_mole_fraction <- process_model$control_mole_fraction
+  perturbations <- process_model$perturbations
   sensitivities <- process_model$sensitivities
 
   shiny::sidebarLayout(
@@ -45,51 +46,59 @@ sensitivity_explorer_ui <- function(id, process_model) {
       shinyWidgets::sliderTextInput(
         ns('month'),
         'Month:',
-        choices = format(sort(unique(emissions$month_start)), '%Y-%m'),
+        choices = format(sort(unique(control_emissions$month_start)), '%Y-%m'),
         animate = TRUE
       ),
       sliderInput(
         ns('start_date'),
         'Start date:',
-        value = date(min(control$time)),
-        min = date(min(control$time)),
-        max = date(max(control$time)),
+        value = date(min(control_mole_fraction$time)),
+        min = date(min(control_mole_fraction$time)),
+        max = date(max(control_mole_fraction$time)),
         step = 1
       ),
       sliderInput(
         ns('days_to_include'),
         'Days to include:',
-        value = 30,
+        value = 14,
         min = 1,
         max = 60,
         step = 1
       ),
+      shiny::checkboxGroupInput(
+        ns('observation_type'),
+        'Observation types:',
+        sort(unique(control_mole_fraction$observation_type)),
+        selected = sort(unique(control_mole_fraction$observation_type))
+      ),
       shiny::selectInput(
-        ns('transcom_str'),
-        'Transcom:',
-        transcoms
+        ns('region_str'),
+        'Region:',
+        regions
       ),
       sliderInput(
         ns('sensitivity_max_abs'),
-        'Max absolute sensitivity:',
+        'Max absolute sensitivity [ppm]:',
         value = 1,
+        step = 0.1,
         min = 0.01,
-        max = max(abs(sensitivities$xco2_sensitivity))
+        max = ceiling(max(abs(sensitivities$co2_sensitivity)))
       ),
       sliderInput(
         ns('flux_max_abs'),
-        'Max absolute flux:',
+        'Max absolute flux [kg/m²/year]:',
         value = 2,
         min = 0.01,
-        max = ceiling(max(abs(emissions$flux)))
+        max = ceiling(max(abs(control_emissions$flux_density)))
       ),
       colourInput(ns('low_colour'), 'Low colour:', value = '#35978f'),
+      colourInput(ns('mid_colour'), 'Mid colour (CO2 only):', value = '#eeeeee'),
       colourInput(ns('high_colour'), 'High colour:', value = '#bf812d'),
       width = 3
     ),
     shiny::mainPanel(
-      plotOutput(ns('emissionsMap')),
-      plotOutput(ns('sensitivityMap')),
+      plotOutput(ns('emissionsMap'), height = '500px'),
+      plotOutput(ns('sensitivityMap'), height = '500px'),
       width = 9
     )
   )
@@ -103,12 +112,32 @@ sensitivity_explorer <- function(
   reactive <- shiny::reactive
   renderPlot <- shiny::renderPlot
 
-  emissions <- process_model$emissions
-  control <- process_model$control
-  sensitivities <- process_model$sensitivities
+  control_emissions <- process_model$control_emissions
+  control_mole_fraction <- process_model$control_mole_fraction
+  perturbations <- process_model$perturbations %>%
+    left_join(
+      control_emissions %>%
+        select(
+          model_id,
+          month_start,
+          longitude,
+          cell_width,
+          latitude,
+          cell_height
+        ),
+      by = 'model_id'
+    )
+  min_from_month_start <- process_model$sensitivities$from_month_start[1]
+  sensitivities <- process_model$sensitivities %>%
+    mutate(
+      from_month_start_dt = as.double(
+        from_month_start - min_from_month_start,
+        units = 'days'
+      )
+    )
 
   end_date <- reactive(input$start_date + days(input$days_to_include))
-  transcom <- reactive(as.integer(input$transcom_str))
+  region <- reactive(as.integer(input$region_str))
 
   shiny::observe({
     shiny::updateSliderInput(
@@ -118,37 +147,44 @@ sensitivity_explorer <- function(
     )
   })
 
-  control_window <- reactive({
-    control %>%
+  control_mole_fraction_window <- reactive({
+    control_mole_fraction %>%
       select(
         model_id,
+        observation_type,
         time,
         longitude,
         latitude
       ) %>%
       filter(
         time >= input$start_date,
-        time <= end_date()
+        time <= end_date(),
+        observation_type %in% input$observation_type
       )
   })
 
   sensitivities_window <- reactive({
-    month_date <- date(sprintf('%s-02', input$month))
+    month_date_dt <- as.double(
+      date(sprintf('%s-01', input$month)) - min_from_month_start,
+      units = 'days'
+    )
 
-    transcom_range <- .binary_search_bounds(
+    region_range <- .binary_search_bounds(
       sensitivities$region,
-      transcom()
+      region()
     )
     from_month_start_range <- .binary_search_bounds(
-      sensitivities$from_month_start,
-      month_date,
-      transcom_range[1],
-      transcom_range[2]
+      sensitivities$from_month_start_dt,
+      month_date_dt,
+      region_range[1],
+      region_range[2]
     )
-
-    control_window() %>%
+    sensitivities_small <- sensitivities %>% select(model_id, co2_sensitivity)
+    control_mole_fraction_window() %>%
       inner_join(
-        sensitivities[from_month_start_range[1] : from_month_start_range[2], ],
+        sensitivities_small[
+          from_month_start_range[1] : from_month_start_range[2],
+        ],
         by = 'model_id'
       )
   })
@@ -156,24 +192,26 @@ sensitivity_explorer <- function(
   output$emissionsMap <- renderPlot({
     ggplot() +
       geom_tile(
-        data = emissions %>%
+        data = perturbations %>%
           filter(
-            region == transcom(),
-            strftime(month_start, '%Y-%m') == input$month
+            region == region(),
+            strftime(month_start, '%Y-%m') == input$month,
+            abs(flux_density) > 0
           ),
-        mapping = aes(longitude, latitude, fill = flux)
+        mapping = aes(
+          longitude,
+          latitude,
+          width = cell_width,
+          height = cell_height,
+          fill = flux_density
+        )
       ) +
-      geom_sf(
-        data = transcom_boundary,
-        fill = NA,
-        colour = '#555555',
-        size = 0.1
-      ) +
-      scale_fill_gradient2(
+      geom_world() +
+      coord_quickmap() +
+      scale_fill_gradient2_oob(
         low = input$low_colour,
         high = input$high_colour,
-        limits = c(-1, 1) * input$flux_max_abs,
-        oob = scales::squish
+        limits = c(-1, 1) * input$flux_max_abs
       ) +
       labs(
         x = 'Longitude',
@@ -181,26 +219,28 @@ sensitivity_explorer <- function(
         fill = expression('Flux [kg/' * m ^ 2 * '/year]')
       ) +
       xlim(-180, 180) +
-      ylim(-90, 90)
+      ylim(-90, 90) +
+      theme(legend.position = 'bottom')
   })
 
   output$sensitivityMap <- renderPlot({
     ggplot(
       sensitivities_window(),
-      aes(longitude, latitude, colour = xco2_sensitivity)
+      aes(longitude, latitude, colour = co2_sensitivity)
     ) +
-      geom_world() +
       geom_point(
         position = position_jitter(width = 0.5, height = 0.5),
-        size = 0.75
+        size = 1
       ) +
+      geom_world() +
       coord_quickmap() +
-      scale_colour_gradient2(
+      scale_colour_gradient2_oob(
         low = input$low_colour,
+        mid = input$mid_colour,
         high = input$high_colour,
-        limits = c(-1, 1) * input$sensitivity_max_abs,
-        oob = scales::squish
+        limits = c(-1, 1) * input$sensitivity_max_abs
       ) +
-      labs(x = 'Longitude', y = 'Latitude', colour = 'XCO2')
+      labs(x = 'Longitude', y = 'Latitude', colour = 'CO2 [ppm]') +
+      theme(legend.position = 'bottom')
   })
 }

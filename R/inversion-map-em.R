@@ -25,7 +25,7 @@ inversion_map_em <- function(
     } else process_model$w
   }
 
-  .log_debug('Precomputing various quantities')
+  log_debug('Precomputing various quantities')
   attenuation_index <- as.integer(measurement_model$attenuation_factor)
   Z2_tilde <- calculate(measurement_model, 'Z2_tilde', process_model)
   C <- measurement_model$C
@@ -48,7 +48,7 @@ inversion_map_em <- function(
     c('alpha', 'beta', 'eta')
   )
 
-  .log_debug('Setting start values')
+  log_debug('Setting start values')
   start <- .extend_list(
     c(
       generate(process_model)[c('a', 'w')],
@@ -64,9 +64,9 @@ inversion_map_em <- function(
   log_posterior <- -Inf
   code <- 3
 
-  .log_debug('Starting EM algorithm')
+  log_debug('Starting EM algorithm')
   for (iteration in 1 : max_iterations) {
-    .log_trace('[%d] Finding sufficient statistics', iteration, max_iterations)
+    log_trace('[%d] Finding sufficient statistics', iteration, max_iterations)
     chol_Q_omega_conditional <- chol(
       Xt_Q_epsilon_X(current) + Q_omega(current)
     )
@@ -82,7 +82,7 @@ inversion_map_em <- function(
     )
 
     if (find_a || find_w) {
-      .log_trace('[%d] Optimising for a and w', iteration, max_iterations)
+      log_trace('[%d] Optimising for a and w', iteration, max_iterations)
       T <- E_omega_t_omega[1 : n_alpha, 1 : n_alpha]
       output <- suppressWarnings(do.call(nlm, c(list(function(theta) {
         a <- get_a(theta)
@@ -102,7 +102,7 @@ inversion_map_em <- function(
     }
 
     if (find_gamma) {
-      .log_trace('[%d] Optimising for gamma', iteration)
+      log_trace('[%d] Optimising for gamma', iteration)
       Y_tilde <- as.vector(
         chol(measurement_model$measurement_precision)
         %*% (Z2_tilde - X %*% mu_omega_conditional)
@@ -127,7 +127,7 @@ inversion_map_em <- function(
       })
     }
 
-    .log_trace('[%d] Calculating current log posterior', iteration)
+    log_trace('[%d] Calculating current log posterior', iteration)
     Q_omega_current <- Q_omega(current)
     log_posterior_previous <- log_posterior
     log_posterior <- (
@@ -156,7 +156,7 @@ inversion_map_em <- function(
     }
 
     if (abs(log_posterior - log_posterior_previous) < objective_tolerance) {
-      .log_trace(
+      log_trace(
         '[%d] Terminating because change in log posterior is within tolerance',
         iteration
       )
@@ -165,7 +165,7 @@ inversion_map_em <- function(
     }
 
     if (step_max_abs < step_tolerance) {
-      .log_trace('[%d] Terminating because step is within tolerance', iteration)
+      log_trace('[%d] Terminating because step is within tolerance', iteration)
       code <- 2
       break
     }

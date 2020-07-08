@@ -1,20 +1,21 @@
 #' @export
-control_explorer_ui <- function(id, measurement_model, process_model) {
+control_explorer_ui <- function(id, process_model) {
   ns <- shiny::NS(id)
 
-  soundings <- measurement_model$soundings
-  xco2_range <- range(soundings$xco2)
-  xco2_range[1] <- floor(xco2_range[1])
-  xco2_range[2] <- ceiling(xco2_range[2])
+  control <- process_model$control_mole_fraction
+
+  co2_range <- range(control$co2)
+  co2_range[1] <- floor(co2_range[1])
+  co2_range[2] <- ceiling(co2_range[2])
 
   shiny::sidebarLayout(
     shiny::sidebarPanel(
       shiny::sliderInput(
         ns('start_date'),
         'Start date:',
-        value = date(min(soundings$observation_time)),
-        min = date(min(soundings$observation_time)),
-        max = date(max(soundings$observation_time)),
+        value = date(min(control$time)),
+        min = date(min(control$time)),
+        max = date(max(control$time)),
         step = 1
       ),
       shiny::sliderInput(
@@ -26,11 +27,11 @@ control_explorer_ui <- function(id, measurement_model, process_model) {
         step = 1
       ),
       shiny::sliderInput(
-        ns('xco2_range'),
-        'XCO2 range:',
-        min = xco2_range[1],
-        max = xco2_range[2],
-        value = xco2_range,
+        ns('co2_range'),
+        'CO2 range [ppm]:',
+        min = co2_range[1],
+        max = co2_range[2],
+        value = co2_range,
         step = 0.1
       ),
       width = 3
@@ -47,12 +48,11 @@ control_explorer <- function(
   input,
   output,
   session,
-  measurement_model,
   process_model
 ) {
   reactive <- shiny::reactive
 
-  control <- process_model$control
+  control <- process_model$control_mole_fraction
 
   end_date <- reactive(input$start_date + days(input$days_to_include))
   control_window <- reactive({
@@ -64,18 +64,17 @@ control_explorer <- function(
   })
 
   output$controlMap <- shiny::renderPlot({
-    df_average <- control_window() %>%
-      group_by(longitude, latitude) %>%
-      summarise(xco2_mean = mean(xco2))
-
-    ggplot(df_average, aes(longitude, latitude, fill = xco2_mean)) +
+    ggplot(
+      control_window(),
+      aes(longitude, latitude, colour = co2)
+    ) +
       geom_world() +
-      geom_tile() +
+      geom_point() +
       coord_quickmap() +
-      scale_fill_wes_palette_c(limits = input$xco2_range) +
-      labs(x = 'Longitude', y = 'Latitude', fill = 'XCO2') +
+      scale_colour_wes_palette_c(limits = input$co2_range) +
+      labs(x = 'Longitude', y = 'Latitude', colour = 'CO2 [ppm]') +
       ggtitle(sprintf(
-        'Grid cell averaged XCO2 between %s and %s',
+        'Control CO2 between %s and %s',
         input$start_date,
         end_date()
       ))

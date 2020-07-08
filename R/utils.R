@@ -1,11 +1,6 @@
 #' @export
 to_month_start <- function(x) {
-  x <- date(x)
-  if_else(
-    day(x) == 1,
-    x + days(1) - months(1),
-    x + days(2 - day(x))
-  )
+  lubridate::floor_date(x, 'months')
 }
 
 #' @export
@@ -61,14 +56,6 @@ n_terms <- function(f) {
     }
     stop('max iterations exceeded')
   })
-}
-
-.log_debug <- function(...) {
-  futile.logger::flog.debug(..., name = 'fluxcapacitor')
-}
-
-.log_trace <- function(...) {
-  futile.logger::flog.trace(..., name = 'fluxcapacitor')
 }
 
 .chol_solve <- function(R, b) {
@@ -154,3 +141,62 @@ n_terms <- function(f) {
     keys = function() ls(cache)
   )
 }
+
+#' @export
+scale_fill_wes_palette_c <- function(palette = 'Zissou1', reverse = FALSE, n = 100, ...) {
+  colours <- wesanderson::wes_palette(name = palette, n, type = 'continuous')
+  if (reverse) colours <- rev(colours)
+  scale_fill_gradientn(colours = colours, ...)
+}
+
+#' @export
+scale_colour_wes_palette_c <- function(palette = 'Zissou1', reverse = FALSE, n = 100, ...) {
+  colours <- wesanderson::wes_palette(name = palette, n, type = 'continuous')
+  if (reverse) colours <- rev(colours)
+  scale_colour_gradientn(colours = colours, ...)
+}
+
+make_scale_x_gradient2_oob <- function(x) {
+  function(
+    ...,
+    limits,
+    midpoint = 0,
+    low = scales::muted('red'),
+    mid = 'white',
+    high = scales::muted('blue'),
+    low_oob = colorspace::darken(low, 0.5),
+    high_oob = colorspace::darken(high, 0.5)
+  ) {
+    midpoint01 <- scales::rescale(
+      midpoint, from = limits, to = c(0.1, 0.9)
+    )
+    x(
+      colours = c(low_oob, low_oob, low, mid, high, high_oob, high_oob),
+      values = c(0, 0.099, 0.1, midpoint01, 0.9, 0.901, 1),
+      breaks = scales::rescale(
+        c(0, 0.1, midpoint01, 0.9, 1),
+        from = c(0.1, 0.9),
+        to = limits
+      ),
+      labels = c(
+        parse(text = sprintf('\'\'<=%f', limits[1])),
+        limits[1],
+        midpoint,
+        limits[2],
+        parse(text = sprintf('\'\'>=%f', limits[2]))
+      ),
+      oob = scales::squish,
+      limits = scales::rescale(
+        c(0, 1),
+        from = c(0.1, 0.9),
+        to = limits
+      )
+    )
+  }
+}
+
+#' @export
+scale_colour_gradient2_oob <- make_scale_x_gradient2_oob(scale_colour_gradientn)
+
+#' @export
+scale_fill_gradient2_oob <- make_scale_x_gradient2_oob(scale_fill_gradientn)

@@ -2,7 +2,7 @@
 emission_inventory_explorer_ui <- function(id, process_model) {
   ns <- shiny::NS(id)
 
-  emissions <- process_model$emissions
+  emissions <- process_model$control_emissions
 
   shiny::sidebarLayout(
     shiny::sidebarPanel(
@@ -14,10 +14,10 @@ emission_inventory_explorer_ui <- function(id, process_model) {
       ),
       shiny::sliderInput(
         ns('flux_max_abs'),
-        'Max absolute flux:',
+        'Max absolute flux [kg/m²/year]:',
         value = 2,
         min = 0.01,
-        max = ceiling(max(abs(emissions$flux)))
+        max = ceiling(max(abs(emissions$flux_density)))
       ),
       colourInput(ns('low_colour'), 'Low colour:', value = '#35978f'),
       colourInput(ns('high_colour'), 'High colour:', value = '#bf812d'),
@@ -35,29 +35,29 @@ emission_inventory_explorer <- function(
   input,
   output,
   session,
-  process_model,
-  transcom_boundary
+  process_model
 ) {
-  emissions <- process_model$emissions
+  emissions <- process_model$control_emissions
   output$emissionsMap <- shiny::renderPlot({
     ggplot() +
       geom_tile(
         data = emissions %>%
           filter(format(month_start, '%Y-%m') == input$month),
-        mapping = aes(longitude, latitude, fill = flux)
+        mapping = aes(
+          longitude,
+          latitude,
+          width = cell_width,
+          height = cell_height,
+          fill = flux_density
+        )
       ) +
-      geom_sf(
-        data = transcom_boundary,
-        fill = NA,
-        colour = '#555555',
-        size = 0.1
-      ) +
-      scale_fill_gradient2(
+      geom_world() +
+      scale_fill_gradient2_oob(
         low = input$low_colour,
         high = input$high_colour,
-        limits = c(-input$flux_max_abs, input$flux_max_abs),
-        oob = scales::squish
+        limits = c(-input$flux_max_abs, input$flux_max_abs)
       ) +
+      coord_quickmap() +
       labs(
         x = 'Longitude',
         y = 'Latitude',

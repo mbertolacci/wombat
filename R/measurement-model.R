@@ -1,29 +1,29 @@
 #' @export
 flux_measurement_model <- function(
-  soundings,
+  observations,
   biases,
   matching,
   process_model,
   C = sparseMatrix(
-    i = seq_len(nrow(soundings)),
+    i = seq_len(nrow(observations)),
     j = matching,
-    dims = c(nrow(soundings), nrow(process_model$control))
+    dims = c(nrow(observations), nrow(process_model$control_mole_fraction))
   ),
   attenuation_variables,
   attenuation_factor = if (!missing(attenuation_variables)) {
     interaction(
-      as.list(soundings[attenuation_variables]),
+      as.list(observations[attenuation_variables]),
       sep = ':'
     )
   } else {
-    factor(rep(1, nrow(soundings)))
+    factor(rep(1, nrow(observations)))
   },
-  measurement_variance = soundings$xco2_error ^ 2,
+  measurement_variance = observations$co2_error ^ 2,
   measurement_precision = Diagonal(
-    nrow(soundings),
+    nrow(observations),
     1 / measurement_variance
   ),
-  A = model.matrix(biases, soundings)[, -1, drop = FALSE],
+  A = model.matrix(biases, observations)[, -1, drop = FALSE],
   beta,
   beta_prior_mean = 0,
   beta_prior_variance = 4,
@@ -41,12 +41,12 @@ flux_measurement_model <- function(
   if (!missing(gamma)) {
     gamma <- .recycle_vector_to(gamma, nlevels(attenuation_factor))
   }
-
-  stopifnot(nrow(C) == nrow(soundings))
-  stopifnot(nrow(attenuation_factor) == nrow(soundings))
-  stopifnot(nrow(measurement_precision) == nrow(soundings))
-  stopifnot(ncol(measurement_precision) == nrow(soundings))
-  stopifnot(nrow(A) == nrow(soundings))
+  stopifnot(is.factor(attenuation_factor))
+  stopifnot(nrow(C) == nrow(observations))
+  stopifnot(length(attenuation_factor) == nrow(observations))
+  stopifnot(nrow(measurement_precision) == nrow(observations))
+  stopifnot(ncol(measurement_precision) == nrow(observations))
+  stopifnot(nrow(A) == nrow(observations))
   if (!missing(beta)) {
     stopifnot(length(beta) == ncol(A))
   }
@@ -56,7 +56,7 @@ flux_measurement_model <- function(
   stopifnot(length(gamma_prior) %in% c(2, 4))
 
   structure(.remove_nulls_and_missing(mget(c(
-    'soundings',
+    'observations',
     'C',
     'measurement_precision',
     'biases',
@@ -74,7 +74,7 @@ flux_measurement_model <- function(
 #' @export
 update.flux_measurement_model <- function(model, ...) {
   current_arguments <- .remove_nulls_and_missing(model[c(
-    'soundings',
+    'observations',
     'C',
     'measurement_precision',
     'biases',
@@ -128,7 +128,7 @@ generate.flux_measurement_model <- function(model, process_model) {
 
   if (!missing(process_model)) {
     epsilon <- .sample_normal_precision(.make_Q_epsilon(model)(model))
-    model$soundings$xco2 <- as.vector(
+    model$observations$co2 <- as.vector(
       model$C %*% calculate(process_model, 'Y2')
       + model$A %*% model$beta
       + epsilon
@@ -141,9 +141,9 @@ generate.flux_measurement_model <- function(model, process_model) {
 #' @export
 filter.flux_measurement_model <- function(model, expr) {
   expr_s <- substitute(expr)
-  indices <- eval(expr_s, model$soundings, parent.frame())
+  indices <- eval(expr_s, model$observations, parent.frame())
 
-  model$soundings <- model$soundings[indices, , drop = FALSE]
+  model$observations <- model$observations[indices, , drop = FALSE]
   model$A <- model$A[indices, , drop = FALSE]
   model$C <- model$C[indices, , drop = FALSE]
   model$measurement_precision <- model$measurement_precision[
@@ -159,16 +159,95 @@ filter.flux_measurement_model <- function(model, expr) {
 #' @export
 calculate.flux_measurement_model <- function(
   x,
-  name = c('Z2_tilde', 'Z2_tilde_debiased'),
+  name = c(
+    'Z2',
+    'Z2_hat',
+    'Z2_debiased',
+    'Z2_tilde',
+    'Z2_tilde_debiased',
+    'Z2_tilde_hat',
+    'Y2',
+    'Y2_control',
+    'Y2_tilde'
+  ),
   process_model,
   parameters = x
 ) {
   name <- match.arg(name)
 
-  if (name == 'Z2_tilde') {
-    x$soundings$xco2 - as.vector(x$C %*% process_model$control$xco2)
+  parameters <- lapply(parameters[c('beta', 'eta', 'alpha')], function(x) {
+    if (is.null(x)) return(x)
+    if (is.vector(x)) {
+      t(x)
+    } else {
+      if (ncol(x) == 0) {
+        x
+      } else {
+        as.matrix(x)
+      }
+    }
+  })
+
+  calculate_bias_correction <- function() {
+    if (ncol(x$A) == 0) 0
+    else as.matrix(t(tcrossprod(x$A, parameters$beta)))
+  }
+
+  add_rowwise <- function(x, y) {
+    if (is.vector(y) && is.matrix(x)) {
+      tmp <- x
+      x <- y
+      y <- tmp
+    }
+    if (is.vector(x) && is.matrix(y)) {
+      # HACK(mgnb): this is the easiest way to add to each row
+      t(x + t(y))
+    } else {
+      x + y
+    }
+  }
+
+  output <- if (name == 'Z2') {
+    x$observations$co2
+  } else if (name == 'Z2_hat') {
+    add_rowwise(
+      calculate(x, 'Y2', process_model, parameters),
+      calculate_bias_correction()
+    )
+  } else if (name == 'Z2_debiased') {
+    add_rowwise(
+      calculate(x, 'Z2', process_model, parameters),
+      -calculate_bias_correction()
+    )
+  } else if (name == 'Z2_tilde') {
+    add_rowwise(
+      calculate(x, 'Z2', process_model, parameters),
+      -calculate(x, 'Y2_control', process_model, parameters)
+    )
   } else if (name == 'Z2_tilde_debiased') {
-    calculate(x, 'Z2_tilde', process_model) - as.vector(x$A %*% parameters$beta)
+    add_rowwise(
+      calculate(x, 'Z2_tilde', process_model, parameters),
+      -calculate_bias_correction()
+    )
+  } else if (name == 'Z2_tilde_hat') {
+    add_rowwise(
+      calculate(x, 'Z2_hat', process_model, parameters),
+      -calculate(x, 'Y2_control', process_model, parameters)
+    )
+  } else {
+    # Anything left falls through to the process model
+    rhs <- calculate(process_model, name, parameters)
+    if (is.matrix(rhs)) {
+      as.matrix(tcrossprod(rhs, x$C))
+    } else {
+      as.matrix(t(x$C %*% rhs))
+    }
+  }
+
+  if (is.matrix(output) && nrow(output) == 1) {
+    output[1, ]
+  } else {
+    output
   }
 }
 
