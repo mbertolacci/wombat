@@ -96,8 +96,7 @@
         }, learn = warming_up, include_n_evaluations = TRUE)
 
         log_trace(
-          'gamma[%d] took %d evaluations, w = %f',
-          i, output$n_evaluations, output$w
+          'gamma[{i}] took {output$n_evaluations} evaluations, w = {output$w}'
         )
 
         output$sample

@@ -99,16 +99,16 @@ inversion_mcmc <- function(
       pb$tick()
     }
 
-    log_trace('[%d/%d] Sampling omega', iteration, n_iterations)
+    log_trace('[{iteration}/{n_iterations}] Sampling omega')
     current <- omega_sampler(current)
 
-    log_trace('[%d/%d] Sampling a', iteration, n_iterations)
+    log_trace('[{iteration}/{n_iterations}] Sampling a')
     current <- a_sampler(current, iteration <= warm_up)
 
-    log_trace('[%d/%d] Sampling w', iteration, n_iterations)
+    log_trace('[{iteration}/{n_iterations}] Sampling w')
     current <- w_sampler(current)
 
-    log_trace('[%d/%d] Sampling gamma', iteration, n_iterations)
+    log_trace('[{iteration}/{n_iterations}] Sampling gamma')
     current <- gamma_sampler(current, iteration <= warm_up)
 
     alpha_samples[iteration, ] <- current$alpha

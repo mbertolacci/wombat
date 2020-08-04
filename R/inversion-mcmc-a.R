@@ -28,8 +28,7 @@
     }, learn = warming_up, include_n_evaluations = TRUE)
 
     log_trace(
-      'a sampler took %d evaluations, w = %f',
-      output$n_evaluations, output$w
+      'a sampler took {output$n_evaluations} evaluations, w = {output$w}'
     )
 
     current$a <- output$sample
