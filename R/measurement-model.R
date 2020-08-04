@@ -356,35 +356,9 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
       if (is.null(l)) {
         gamma_ij[k] * part_x[[k]]
       } else {
-        .fast_add(l, gamma_ij[k] * part_x[[k]])
+        l + gamma_ij[k] * part_x[[k]]
       }
     }, seq_len(nrow(part_ij)), NULL)
-  }
-}
-
-.make_A_Q_epsilon_B <- function(A, B, model) {
-  attenuation_index <- as.integer(model$attenuation_factor)
-  n_gamma <- nlevels(model$attenuation_factor)
-
-  A_Q_epsilon0_B_parts <- vector('list', n_gamma)
-  for (gamma_index in 1 : n_gamma) {
-    indices <- attenuation_index == gamma_index
-    A_part <- A[, indices]
-    B_part <- B[indices, ]
-    Q_epsilon0_part <- model$measurement_precision[indices, indices]
-    A_Q_epsilon0_B_parts[[gamma_index]] <- (
-      A_part %*% Q_epsilon0_part %*% B_part
-    )
-  }
-
-  function(params = list(gamma = rep(1, n_gamma)), parts = 1 : n_gamma) {
-    Reduce(function(l, i) {
-      if (is.null(l)) {
-        params$gamma[i] * A_Q_epsilon0_B_parts[[i]]
-      } else {
-        .fast_add(l, params$gamma[i] * A_Q_epsilon0_B_parts[[i]])
-      }
-    }, parts, NULL)
   }
 }
 

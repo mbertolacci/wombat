@@ -19,7 +19,6 @@ Imports:
     dplyr,
     logger,
     lubridate,
-    Rcpp,
     ggplot2,
     memoise,
     digest,
@@ -35,7 +34,3 @@ Suggests:
     colourpicker,
     rnaturalearth,
     rnaturalearthdata
-LinkingTo: 
-    Rcpp,
-    RcppEigen,
-    Matrix

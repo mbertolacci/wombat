@@ -109,7 +109,7 @@
   Q_omega = .make_Q_omega(process_model, measurement_model, variables)
 ) {
   function(parameters) {
-    chol(.fast_add(Q_omega(parameters), Xt_Q_epsilon_X(parameters)))
+    chol(Q_omega(parameters) + Xt_Q_epsilon_X(parameters))
   }
 }
 

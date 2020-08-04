@@ -465,6 +465,6 @@ aggregate_flux <- function(model, filter_expr = TRUE, parameters = model) {
       x = params$w,
       symmetric = TRUE
     ))
-    fast_kronecker(Q_alpha_t, Q_alpha_s)
+    kronecker(Q_alpha_t, Q_alpha_s)
   }
 }

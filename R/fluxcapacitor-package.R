@@ -11,5 +11,4 @@
 #' @importFrom stats update
 #' @importFrom logger log_debug
 #' @importFrom logger log_trace
-#' @useDynLib fluxcapacitor, .registration = TRUE
 NULL
