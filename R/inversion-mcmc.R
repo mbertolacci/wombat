@@ -9,24 +9,11 @@ inversion_mcmc <- function(
     a = list(w = 0.25, max_evaluations = 100),
     gamma = list(w = 1, max_evaluations = 100)
   ),
-  marginalised_variables = NULL,
   show_progress = TRUE
 ) {
   if (!missing(tuning)) {
     tuning <- .extend_list(eval(formals(inversion_mcmc)$tuning), tuning)
   }
-
-  if (!is.null(marginalised_variables)) {
-    marginalised_variables <- match.arg(
-      marginalised_variables,
-      c('eta', 'beta'),
-      several.ok = TRUE
-    )
-  }
-  included_variables <- setdiff(
-    c('alpha', 'eta', 'beta'),
-    marginalised_variables
-  )
 
   n_alpha <- ncol(process_model$H)
   n_eta <- ncol(process_model$Psi)
@@ -36,17 +23,12 @@ inversion_mcmc <- function(
   n_gamma <- nlevels(measurement_model$attenuation_factor)
 
   log_debug('Precomputing various quantities')
-  omega_sampler <- .make_omega_sampler(
-    measurement_model,
-    process_model,
-    variables = included_variables
-  )
+  omega_sampler <- .make_omega_sampler(measurement_model, process_model)
   a_sampler <- .make_a_sampler(process_model, tuning[['a']])
   w_sampler <- .make_w_sampler(process_model)
   gamma_sampler <- .make_gamma_sampler(
     measurement_model,
     process_model,
-    variables = included_variables,
     tuning = tuning[['gamma']]
   )
 
@@ -63,9 +45,6 @@ inversion_mcmc <- function(
     .remove_nulls(process_model[c('alpha', 'eta', 'a', 'w')]),
     .remove_nulls(process_model[c('beta', 'gamma')])
   )[c('alpha', 'eta', 'beta', 'a', 'w', 'gamma')]
-  for (variable in marginalised_variables) {
-    start[[variable]] <- NA
-  }
   if (any(is.na(start$w))) {
     start$w[is.na(start$w)] <- generated_process_model$w[is.na(start$w)]
   }
@@ -78,6 +57,7 @@ inversion_mcmc <- function(
   gamma_samples <- matrix(NA, nrow = n_iterations, ncol = n_gamma)
 
   current <- start
+
   alpha_samples[1, ] <- current$alpha
   eta_samples[1, ] <- current$eta
   a_samples[1, ] <- current$a
@@ -132,7 +112,7 @@ inversion_mcmc <- function(
   colnames(a_samples) <- 'a'
   colnames(w_samples) <- sprintf('w[%d]', seq_len(ncol(w_samples)))
   colnames(beta_samples) <- colnames(measurement_model$A)
-  colnames(gamma_samples) <- sprintf('gamma[%d]', seq_len(ncol(gamma_samples)))
+  colnames(gamma_samples) <- levels(measurement_model$attenuation_factor)
 
   structure(
     list(

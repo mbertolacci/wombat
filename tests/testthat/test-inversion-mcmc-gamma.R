@@ -1,12 +1,17 @@
 context('inversion-mcmc-gamma')
 
 test_that('quantiles are estimated correctly', {
-  process_model <- flux_process_model(emissions, control, sensitivities)
-  soundings$xco2 <- rnorm(2)
+  process_model <- flux_process_model(
+    control_emissions,
+    control_mole_fraction,
+    perturbations,
+    sensitivities
+  )
+  observations$co2 <- rnorm(2)
   measurement_model <- flux_measurement_model(
-    soundings,
+    observations,
     ~ instrument_mode,
-    soundings$sounding_id,
+    observations$observation_id,
     process_model,
     attenuation_variables = 'instrument_mode'
   )
@@ -17,6 +22,7 @@ test_that('quantiles are estimated correctly', {
   )
 
   current <- list(
+    gamma = rep(1, 2),
     alpha = rep(0, 6),
     eta = rep(0, 16),
     beta = rep(0, 1)
@@ -27,9 +33,9 @@ test_that('quantiles are estimated correctly', {
     current$gamma <- gamma
 
     output <- sum(dnorm(
-      soundings$xco2,
+      observations$co2,
       sd = (
-        soundings$xco2_error
+        observations$co2_error
         / sqrt(gamma[measurement_model$attenuation_factor])
       ),
       log = TRUE
@@ -45,14 +51,14 @@ test_that('quantiles are estimated correctly', {
     c(0.25, 0.5, 0.75)
   )
 
-  n_samples <- 5000
+  n_samples <- 2000
   warm_up <- 1000
-  gamma_samples_full <- coda::mcmc(rep(0, n_samples))
+  gamma_samples_full <- coda::mcmc(matrix(0, nrow = n_samples, ncol = 2))
   for (i in 1 : n_samples) {
     current <- gamma_sampler(current, n_samples <= warm_up)
-    gamma_samples_full[i] <- current$gamma[1]
+    gamma_samples_full[i, ] <- current$gamma
   }
-  gamma_samples <- window(gamma_samples_full, start = warm_up + 1)
+  gamma_samples <- window(gamma_samples_full[, 1], start = warm_up + 1)
 
   expect_true(all(abs(
     quantile(gamma_samples, probs = c(0.25, 0.5, 0.75))

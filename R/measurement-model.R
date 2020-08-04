@@ -19,9 +19,9 @@ flux_measurement_model <- function(
     factor(rep(1, nrow(observations)))
   },
   measurement_variance = observations$co2_error ^ 2,
-  measurement_precision = Diagonal(
+  measurement_covariance = Diagonal(
     nrow(observations),
-    1 / measurement_variance
+    measurement_variance
   ),
   A = model.matrix(biases, observations)[, -1, drop = FALSE],
   beta,
@@ -44,8 +44,8 @@ flux_measurement_model <- function(
   stopifnot(is.factor(attenuation_factor))
   stopifnot(nrow(C) == nrow(observations))
   stopifnot(length(attenuation_factor) == nrow(observations))
-  stopifnot(nrow(measurement_precision) == nrow(observations))
-  stopifnot(ncol(measurement_precision) == nrow(observations))
+  stopifnot(nrow(measurement_covariance) == nrow(observations))
+  stopifnot(ncol(measurement_covariance) == nrow(observations))
   stopifnot(nrow(A) == nrow(observations))
   if (!missing(beta)) {
     stopifnot(length(beta) == ncol(A))
@@ -58,7 +58,7 @@ flux_measurement_model <- function(
   structure(.remove_nulls_and_missing(mget(c(
     'observations',
     'C',
-    'measurement_precision',
+    'measurement_covariance',
     'biases',
     'A',
     'beta',
@@ -76,7 +76,7 @@ update.flux_measurement_model <- function(model, ...) {
   current_arguments <- .remove_nulls_and_missing(model[c(
     'observations',
     'C',
-    'measurement_precision',
+    'measurement_covariance',
     'biases',
     'A',
     'beta',
@@ -94,7 +94,7 @@ update.flux_measurement_model <- function(model, ...) {
     A = 'biases',
     C = c('matching', 'process_model'),
     attenuation_factor = 'attenuation_variables',
-    measurement_precision = 'measurement_variance',
+    measurement_covariance = 'measurement_variance',
     beta_prior_precision = c('biases', 'beta_prior_variance')
   )
   for (name in names(terminal_arguments)) {
@@ -127,7 +127,9 @@ generate.flux_measurement_model <- function(model, process_model) {
   }
 
   if (!missing(process_model)) {
-    epsilon <- .sample_normal_precision(.make_Q_epsilon(model)(model))
+    epsilon <- .sample_normal_covariance(model$measurement_covariance) / sqrt(
+      model$gamma[model$attenuation_factor]
+    )
     model$observations$co2 <- as.vector(
       model$C %*% calculate(process_model, 'Y2')
       + model$A %*% model$beta
@@ -144,14 +146,33 @@ filter.flux_measurement_model <- function(model, expr) {
   indices <- eval(expr_s, model$observations, parent.frame())
 
   model$observations <- model$observations[indices, , drop = FALSE]
+
   model$A <- model$A[indices, , drop = FALSE]
+  non_empty_columns <- colSums(abs(model$A)) != 0
+  model$A <- model$A[, non_empty_columns, drop = FALSE]
+  model$beta_prior_mean <- model$beta_prior_mean[non_empty_columns]
+  model$beta_prior_precision <- model$beta_prior_precision[
+    non_empty_columns,
+    non_empty_columns,
+    drop = FALSE
+  ]
+  if (!is.null(model[['beta']])) {
+    model[['beta']] <- model[['beta']][non_empty_columns]
+  }
+
   model$C <- model$C[indices, , drop = FALSE]
-  model$measurement_precision <- model$measurement_precision[
+  model$measurement_covariance <- model$measurement_covariance[
     indices,
     indices,
     drop = FALSE
   ]
-  model$attenuation_factor <- model$attenuation_factor[indices]
+  original_levels <- levels(model$attenuation_factor)
+  model$attenuation_factor <- droplevels(model$attenuation_factor[indices])
+  if (!is.null(model[['gamma']])) {
+    model[['gamma']] <- model[['gamma']][
+      original_levels %in% levels(model$attenuation_factor)
+    ]
+  }
 
   model
 }
@@ -283,25 +304,61 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
 .make_Xt_Q_epsilon_X <- function(X, model) {
   attenuation_index <- as.integer(model$attenuation_factor)
   n_gamma <- nlevels(model$attenuation_factor)
+  n_per_gamma <- table(model$attenuation_factor)
 
-  Xt_Q_epsilon0_X_parts <- vector('list', n_gamma)
-  for (gamma_index in 1 : n_gamma) {
-    indices <- attenuation_index == gamma_index
-    X_part <- X[indices, ]
-    Q_epsilon0_part <- model$measurement_precision[indices, indices]
-    Xt_Q_epsilon0_X_parts[[gamma_index]] <- crossprod(
-      chol(Q_epsilon0_part) %*% X_part
-    )
+  zero_rows <- function(A, include_rows) {
+    At <- as(A, 'dgTMatrix')
+    include <- (At@i + 1) %in% include_rows
+    At@i <- At@i[include]
+    At@j <- At@j[include]
+    At@x <- At@x[include]
+    as(At, 'dgCMatrix')
   }
 
-  function(params = list(gamma = rep(1, n_gamma)), parts = 1 : n_gamma) {
-    Reduce(function(l, i) {
+  part_ij <- rbind(
+    cbind(seq_len(n_gamma), seq_len(n_gamma)),
+    if (n_gamma > 1) t(combn(n_gamma, 2)) else NULL
+  )
+  log_trace('Forming parts of Xt_Q_epsilon_X')
+  part_x <- apply(part_ij, 1, function(ij) {
+    i <- ij[1]
+    j <- ij[2]
+
+    if (n_per_gamma[i] == 0 || n_per_gamma[j] == 0) {
+      return(sparseMatrix(i = NULL, j = NULL, dims = c(ncol(X), ncol(X))))
+    }
+
+    Xi <- zero_rows(X, which(attenuation_index == i))
+    if (i == j) {
+      forceSymmetric(crossprod(Xi, solve(model$measurement_covariance, Xi)))
+    } else {
+      Xj <- zero_rows(X, which(attenuation_index == j))
+      forceSymmetric(
+        crossprod(Xi, solve(model$measurement_covariance, Xj))
+        + crossprod(Xj, solve(model$measurement_covariance, Xi))
+      )
+    }
+  })
+
+  # NOTE(mgnb): drop parts equal to zero
+  keep_part <- sapply(part_x, function(x) {
+    nnzero(x) > 0
+  })
+  part_ij <- part_ij[keep_part, , drop = FALSE]
+  part_x <- part_x[keep_part]
+
+  function(params = list(gamma = rep(1, n_gamma))) {
+    gamma_ij <- (
+      sqrt(params$gamma)[part_ij[, 1]] * sqrt(params$gamma)[part_ij[, 2]]
+    )
+
+    Reduce(function(l, k) {
       if (is.null(l)) {
-        params$gamma[i] * Xt_Q_epsilon0_X_parts[[i]]
+        gamma_ij[k] * part_x[[k]]
       } else {
-        .fast_add(l, params$gamma[i] * Xt_Q_epsilon0_X_parts[[i]])
+        .fast_add(l, gamma_ij[k] * part_x[[k]])
       }
-    }, parts, NULL)
+    }, seq_len(nrow(part_ij)), NULL)
   }
 }
 
@@ -331,11 +388,18 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
   }
 }
 
-.make_Q_epsilon <- function(model) {
-  n_gamma <- nlevels(model$attenuation_factor)
-  function(params = list(gamma = rep(1, n_gamma))) {
-    output <- model$measurement_precision
-    output@x <- output@x * params$gamma[model$attenuation_factor]
-    output
+.make_solve_Q_epsilon <- function(model) {
+  function(x, params = list(gamma = rep(1, n_gamma))) {
+    D <- Diagonal(x = sqrt(params$gamma[model$attenuation_factor]))
+    D %*% solve(model$measurement_covariance, D %*% x)
   }
 }
+
+# .make_Q_epsilon <- function(model) {
+#   n_gamma <- nlevels(model$attenuation_factor)
+#   function(params = list(gamma = rep(1, n_gamma))) {
+#     output <- model$measurement_precision
+#     output@x <- output@x * params$gamma[model$attenuation_factor]
+#     output
+#   }
+# }

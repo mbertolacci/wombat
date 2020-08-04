@@ -1,7 +1,12 @@
 context('inversion-mcmc-a')
 
 test_that('quantiles are estimated correctly', {
-  model <- flux_process_model(emissions, control, sensitivities)
+  model <- flux_process_model(
+    control_emissions,
+    control_mole_fraction,
+    perturbations,
+    sensitivities
+  )
   a_sampler <- .make_a_sampler(model)
 
   current <- list(

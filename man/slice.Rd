@@ -41,7 +41,7 @@ for (i in (-spinup):N) {
   if (i > 0) rsam[i] <- x
   if (abs(i) <= 5)
    cat(sprintf(
-     'i = \%i, w = \%.3f\\n',
+     'i = \%i, w = \%.3f\n',
      i,
      get("w", envir = environment(myslice))
    ))

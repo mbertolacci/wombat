@@ -1,4 +1,6 @@
+#' @import methods
 #' @import Matrix
+#' @import WoodburyMatrix
 #' @import RcppEigen
 #' @import dplyr
 #' @import ggplot2
