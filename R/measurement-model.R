@@ -214,16 +214,18 @@ filter.flux_measurement_model <- function(model, expr) {
   model$C <- model$C[indices, , drop = FALSE]
 
   model$A <- model$A[indices, , drop = FALSE]
-  non_empty_columns <- colSums(abs(model$A)) != 0
-  model$A <- model$A[, non_empty_columns, drop = FALSE]
-  model$beta_prior_mean <- model$beta_prior_mean[non_empty_columns]
-  model$beta_prior_precision <- model$beta_prior_precision[
-    non_empty_columns,
-    non_empty_columns,
-    drop = FALSE
-  ]
-  if (!is.null(model[['beta']])) {
-    model[['beta']] <- model[['beta']][non_empty_columns]
+  if (ncol(model$A) > 0) {
+    non_empty_columns <- colSums(abs(model$A)) != 0
+    model$A <- model$A[, non_empty_columns, drop = FALSE]
+    model$beta_prior_mean <- model$beta_prior_mean[non_empty_columns]
+    model$beta_prior_precision <- model$beta_prior_precision[
+      non_empty_columns,
+      non_empty_columns,
+      drop = FALSE
+    ]
+    if (!is.null(model[['beta']])) {
+      model[['beta']] <- model[['beta']][non_empty_columns]
+    }
   }
 
   original_levels <- levels(model$attenuation_factor)
