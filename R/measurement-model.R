@@ -120,7 +120,9 @@ update.flux_measurement_model <- function(model, ...) {
     A = 'biases',
     C = c('matching', 'process_model'),
     attenuation_factor = 'attenuation_variables',
-    beta_prior_precision = c('biases', 'beta_prior_variance')
+    beta_prior_precision = c('biases', 'beta_prior_variance'),
+    time = 'observations',
+    measurement_variance = 'observations'
   )
   for (name in names(terminal_arguments)) {
     if (any(terminal_arguments[[name]] %in% names(update_arguments))) {
