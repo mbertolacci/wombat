@@ -18,11 +18,8 @@ flux_measurement_model <- function(
   } else {
     factor(rep(1, nrow(observations)))
   },
+  time = observations$time,
   measurement_variance = observations$co2_error ^ 2,
-  measurement_covariance = Diagonal(
-    nrow(observations),
-    measurement_variance
-  ),
   A = model.matrix(biases, observations)[, -1, drop = FALSE],
   beta,
   beta_prior_mean = 0,
@@ -32,8 +29,17 @@ flux_measurement_model <- function(
     1 / beta_prior_variance
   ),
   gamma,
-  gamma_prior = gamma_quantile_prior(0.1, 1.9)
+  gamma_prior = gamma_quantile_prior(0.1, 1.9),
+  rho,
+  rho_prior = list(lower = 0, upper = 1),
+  ell,
+  ell_prior = list(shape = 1, rate = 1, unit = 'secs')
 ) {
+  if (
+    is.unsorted(order(attenuation_factor, time))
+  ) {
+    stop('observations must be sorted by attenuation_factor then time')
+  }
   if (!missing(beta)) {
     beta <- .recycle_vector_to(beta, ncol(A))
   }
@@ -41,11 +47,17 @@ flux_measurement_model <- function(
   if (!missing(gamma)) {
     gamma <- .recycle_vector_to(gamma, nlevels(attenuation_factor))
   }
+  if (!missing(rho)) {
+    rho <- .recycle_vector_to(rho, nlevels(attenuation_factor))
+  }
+  if (!missing(ell)) {
+    ell <- .recycle_vector_to(ell, nlevels(attenuation_factor))
+  }
   stopifnot(is.factor(attenuation_factor))
   stopifnot(nrow(C) == nrow(observations))
   stopifnot(length(attenuation_factor) == nrow(observations))
-  stopifnot(nrow(measurement_covariance) == nrow(observations))
-  stopifnot(ncol(measurement_covariance) == nrow(observations))
+  stopifnot(length(time) == nrow(observations))
+  stopifnot(length(measurement_variance) == nrow(observations))
   stopifnot(nrow(A) == nrow(observations))
   if (!missing(beta)) {
     stopifnot(length(beta) == ncol(A))
@@ -54,11 +66,16 @@ flux_measurement_model <- function(
   stopifnot(nrow(beta_prior_precision) == ncol(A))
   stopifnot(is.list(gamma_prior))
   stopifnot(length(gamma_prior) %in% c(2, 4))
+  stopifnot(is.list(rho_prior))
+  stopifnot(length(rho_prior) == 2)
+  stopifnot(is.list(ell_prior))
+  stopifnot(length(ell_prior) == 3)
 
   structure(.remove_nulls_and_missing(mget(c(
     'observations',
     'C',
-    'measurement_covariance',
+    'time',
+    'measurement_variance',
     'biases',
     'A',
     'beta',
@@ -67,7 +84,11 @@ flux_measurement_model <- function(
     'attenuation_variables',
     'attenuation_factor',
     'gamma',
-    'gamma_prior'
+    'gamma_prior',
+    'rho',
+    'rho_prior',
+    'ell',
+    'ell_prior'
   ))), class = 'flux_measurement_model')
 }
 
@@ -76,7 +97,8 @@ update.flux_measurement_model <- function(model, ...) {
   current_arguments <- .remove_nulls_and_missing(model[c(
     'observations',
     'C',
-    'measurement_covariance',
+    'time',
+    'measurement_variance',
     'biases',
     'A',
     'beta',
@@ -85,7 +107,11 @@ update.flux_measurement_model <- function(model, ...) {
     'attenuation_variables',
     'attenuation_factor',
     'gamma',
-    'gamma_prior'
+    'gamma_prior',
+    'rho',
+    'rho_prior',
+    'ell',
+    'ell_prior'
   )])
   update_arguments <- list(...)
 
@@ -94,7 +120,6 @@ update.flux_measurement_model <- function(model, ...) {
     A = 'biases',
     C = c('matching', 'process_model'),
     attenuation_factor = 'attenuation_variables',
-    measurement_covariance = 'measurement_variance',
     beta_prior_precision = c('biases', 'beta_prior_variance')
   )
   for (name in names(terminal_arguments)) {
@@ -126,10 +151,25 @@ generate.flux_measurement_model <- function(model, process_model) {
     )
   }
 
-  if (!missing(process_model)) {
-    epsilon <- .sample_normal_covariance(model$measurement_covariance) / sqrt(
-      model$gamma[model$attenuation_factor]
+  if (is.null(model[['rho']])) {
+    model$rho <- runif(
+      nlevels(model$attenuation_factor),
+      min = model$rho_prior[['lower']],
+      max = model$rho_prior[['upper']]
     )
+  }
+
+  if (is.null(model[['ell']])) {
+    model$ell <- rgamma(
+      nlevels(model$attenuation_factor),
+      shape = model$ell_prior[['shape']],
+      rate = model$ell_prior[['rate']]
+    )
+  }
+
+  if (!missing(process_model)) {
+    Sigma_epsilon <- .make_Sigma_epsilon(model)(model)
+    epsilon <- .rmvnorm(covariance = Sigma_epsilon)
     model$observations$co2 <- as.vector(
       model$C %*% calculate(process_model, 'Y2')
       + model$A %*% model$beta
@@ -141,11 +181,35 @@ generate.flux_measurement_model <- function(model, process_model) {
 }
 
 #' @export
+generate_posterior_predictive <- function(
+  model,
+  name = c('Z2_hat', 'Z2_tilde_hat'),
+  process_model,
+  samples
+) {
+  mean_part <- calculate(model, name, process_model, samples)
+
+  Sigma_epsilon <- .make_Sigma_epsilon(model)
+  epsilon <- t(sapply(seq_len(nrow(samples$gamma)), function(iteration) {
+    as.vector(.rmvnorm(covariance = Sigma_epsilon(list(
+      gamma = samples$gamma[iteration, ],
+      rho = samples$rho[iteration, ],
+      ell = samples$ell[iteration, ]
+    ))))
+  }))
+
+  mean_part + epsilon
+}
+
+#' @export
 filter.flux_measurement_model <- function(model, expr) {
   expr_s <- substitute(expr)
   indices <- eval(expr_s, model$observations, parent.frame())
 
   model$observations <- model$observations[indices, , drop = FALSE]
+  model$time <- model$time[indices]
+  model$measurement_variance <- model$measurement_variance[indices]
+  model$C <- model$C[indices, , drop = FALSE]
 
   model$A <- model$A[indices, , drop = FALSE]
   non_empty_columns <- colSums(abs(model$A)) != 0
@@ -160,18 +224,14 @@ filter.flux_measurement_model <- function(model, expr) {
     model[['beta']] <- model[['beta']][non_empty_columns]
   }
 
-  model$C <- model$C[indices, , drop = FALSE]
-  model$measurement_covariance <- model$measurement_covariance[
-    indices,
-    indices,
-    drop = FALSE
-  ]
   original_levels <- levels(model$attenuation_factor)
   model$attenuation_factor <- droplevels(model$attenuation_factor[indices])
-  if (!is.null(model[['gamma']])) {
-    model[['gamma']] <- model[['gamma']][
-      original_levels %in% levels(model$attenuation_factor)
-    ]
+  for (name in c('gamma', 'rho', 'ell')) {
+    if (!is.null(model[[name]])) {
+      model[[name]] <- model[[name]][
+        original_levels %in% levels(model$attenuation_factor)
+      ]
+    }
   }
 
   model
@@ -274,6 +334,8 @@ calculate.flux_measurement_model <- function(
 
 #' @export
 log_prior.flux_measurement_model <- function(model, parameters = model) {
+  output <- 0
+
   if (is.null(model[['gamma']])) {
     gamma <- parameters$gamma
 
@@ -290,36 +352,53 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
       }
     }
 
-    sum(dgamma(
+    output <- output + sum(dgamma(
       gamma,
       shape = model$gamma_prior[['shape']],
       rate = model$gamma_prior[['rate']],
       log = TRUE
     ))
-  } else {
-    0
   }
+
+  if (is.null(model[['rho']])) {
+    output <- output + sum(dunif(
+      parameters[['rho']],
+      min = model$rho_prior[['lower']],
+      max = model$rho_prior[['upper']],
+      log = TRUE
+    ))
+  }
+
+  if (is.null(model[['ell']])) {
+    output <- output + sum(dgamma(
+      parameters[['ell']],
+      shape = model$ell_prior[['shape']],
+      rate = model$ell_prior[['rate']],
+      log = TRUE
+    ))
+  }
+
+  output
 }
 
-.make_Xt_Q_epsilon_X <- function(X, model) {
+.zero_rows <- function(A, include_rows) {
+  At <- as(A, 'dgTMatrix')
+  include <- (At@i + 1) %in% include_rows
+  At@i <- At@i[include]
+  At@j <- At@j[include]
+  At@x <- At@x[include]
+  as(At, 'dgCMatrix')
+}
+
+.Xt_Q_epsilon_X_parts <- function(X, model, Sigma_epsilon) {
   attenuation_index <- as.integer(model$attenuation_factor)
   n_gamma <- nlevels(model$attenuation_factor)
   n_per_gamma <- table(model$attenuation_factor)
-
-  zero_rows <- function(A, include_rows) {
-    At <- as(A, 'dgTMatrix')
-    include <- (At@i + 1) %in% include_rows
-    At@i <- At@i[include]
-    At@j <- At@j[include]
-    At@x <- At@x[include]
-    as(At, 'dgCMatrix')
-  }
 
   part_ij <- rbind(
     cbind(seq_len(n_gamma), seq_len(n_gamma)),
     if (n_gamma > 1) t(combn(n_gamma, 2)) else NULL
   )
-  log_trace('Forming parts of Xt_Q_epsilon_X')
   part_x <- apply(part_ij, 1, function(ij) {
     i <- ij[1]
     j <- ij[2]
@@ -328,14 +407,14 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
       return(sparseMatrix(i = NULL, j = NULL, dims = c(ncol(X), ncol(X))))
     }
 
-    Xi <- zero_rows(X, which(attenuation_index == i))
+    Xi <- .zero_rows(X, which(attenuation_index == i))
     if (i == j) {
-      forceSymmetric(crossprod(Xi, solve(model$measurement_covariance, Xi)))
+      forceSymmetric(crossprod(Xi, solve(Sigma_epsilon, Xi)))
     } else {
-      Xj <- zero_rows(X, which(attenuation_index == j))
+      Xj <- .zero_rows(X, which(attenuation_index == j))
       forceSymmetric(
-        crossprod(Xi, solve(model$measurement_covariance, Xj))
-        + crossprod(Xj, solve(model$measurement_covariance, Xi))
+        crossprod(Xi, solve(Sigma_epsilon, Xj))
+        + crossprod(Xj, solve(Sigma_epsilon, Xi))
       )
     }
   })
@@ -347,33 +426,176 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
   part_ij <- part_ij[keep_part, , drop = FALSE]
   part_x <- part_x[keep_part]
 
-  function(params = list(gamma = rep(1, n_gamma))) {
+  list(
+    ij = part_ij,
+    x = part_x
+  )
+}
+
+.make_Xt_Q_epsilon_X <- function(
+  X,
+  model,
+  Sigma_epsilon = .make_Sigma_epsilon(model)
+) {
+  attenuation_index <- as.integer(model$attenuation_factor)
+
+  get_parts <- memoise::memoise(function(params) {
+    params$gamma <- params$rho
+    params$gamma[seq_along(params$gamma)] <- 1
+    .Xt_Q_epsilon_X_parts(X, model, Sigma_epsilon(params))
+  }, cache = .cache_memory_fifo())
+
+  actual <- memoise::memoise(function(params) {
+    parts <- get_parts(params[c('rho', 'ell')])
+
     gamma_ij <- (
-      sqrt(params$gamma)[part_ij[, 1]] * sqrt(params$gamma)[part_ij[, 2]]
+      sqrt(params$gamma)[parts$ij[, 1]] * sqrt(params$gamma)[parts$ij[, 2]]
     )
 
     Reduce(function(l, k) {
       if (is.null(l)) {
-        gamma_ij[k] * part_x[[k]]
+        gamma_ij[k] * parts$x[[k]]
       } else {
-        l + gamma_ij[k] * part_x[[k]]
+        l + gamma_ij[k] * parts$x[[k]]
       }
-    }, seq_len(nrow(part_ij)), NULL)
+    }, seq_len(nrow(parts$ij)), NULL)
+  }, cache = .cache_memory_fifo())
+
+  function(params) {
+    actual(params[c('gamma', 'rho', 'ell')])
   }
 }
 
-.make_solve_Q_epsilon <- function(model) {
-  function(x, params = list(gamma = rep(1, n_gamma))) {
-    D <- Diagonal(x = sqrt(params$gamma[model$attenuation_factor]))
-    D %*% solve(model$measurement_covariance, D %*% x)
+.make_Xt_Q_epsilon_X_tf <- function(
+  X,
+  model,
+  Sigma_epsilon = .make_Sigma_epsilon(model)
+) {
+  attenuation_index <- as.integer(model$attenuation_factor)
+  n_parts <- nlevels(model$attenuation_factor)
+
+  if (!requireNamespace('tensorflow', quietly = TRUE)) {
+    stop('tensorflow requested but not installed')
+  }
+  tf <- tensorflow::tf
+
+  as_tf <- function(x, ...) {
+    tf$convert_to_tensor(x, dtype = tf$float32, ...)
+  }
+
+  X_parts_tf <- lapply(
+    levels(model$attenuation_factor),
+    function(k) {
+      as_tf(as.matrix(X[model$attenuation_factor == k, ]))
+    }
+  )
+
+  function(params) {
+    output_parts <- lapply(seq_len(n_parts), function(i) {
+      X_i <- X_parts_tf[[i]]
+      Sigma_epsilon_i <- Sigma_epsilon(params, i)
+
+      A_diag <- as_tf(Sigma_epsilon_i@A@x)
+      A <- tf$linalg$LinearOperatorDiag(A_diag)
+      B_major <- as_tf(Sigma_epsilon_i@B@major)
+      B_minor <- as_tf(Sigma_epsilon_i@B@minor)
+      O_major <- A_diag + B_major
+
+      A_X_i <- A$matmul(X_i)
+      rhs <- A_X_i - A$matmul(tf$linalg$tridiagonal_solve(
+        list(B_minor, O_major, B_minor),
+        A_X_i,
+        diagonals_format = 'sequence',
+        partial_pivoting = FALSE
+      ))
+
+      tf$matmul(X_i, rhs, transpose_a = TRUE)
+    })
+
+    forceSymmetric(as.array(tf$add_n(output_parts)))
   }
 }
 
-# .make_Q_epsilon <- function(model) {
-#   n_gamma <- nlevels(model$attenuation_factor)
-#   function(params = list(gamma = rep(1, n_gamma))) {
-#     output <- model$measurement_precision
-#     output@x <- output@x * params$gamma[model$attenuation_factor]
-#     output
-#   }
-# }
+.make_Sigma_epsilon <- function(model) {
+  attenuation_index <- as.integer(model$attenuation_factor)
+  n_parts <- nlevels(model$attenuation_factor)
+
+  time_parts <- split(model$time, model$attenuation_factor)
+  ell_units <- .recycle_vector_to(model$ell_prior$unit, n_parts)
+  diff_time_since_parts <- lapply(seq_len(n_parts), function(k) {
+    diff(as.double(
+      time_parts[[k]] - min(time_parts[[k]]),
+      unit = ell_units[k]
+    ))
+  })
+  precisions <- 1 / model$measurement_variance
+  precision_parts <- split(precisions, model$attenuation_factor)
+  cross_precision_parts <- precision_parts %>%
+    lapply(function(x) {
+      sd_x <- sqrt(x)
+      head(sd_x, -1) * tail(sd_x, -1)
+    })
+
+
+  memoise::memoise(function(params, parts = seq_len(n_parts)) {
+    gamma <- params$gamma
+    rho <- params$rho
+    ell <- params$ell
+
+    if (all(rho == 1)) {
+      stop('rho = 1 not supported')
+    }
+
+    A <- FastDiagonal(
+      x = (
+        (gamma / (1 - rho))[model$attenuation_factor]
+        * precisions
+      )[attenuation_index %in% parts]
+    )
+    if (all(rho == 0)) {
+      return(solve(A))
+    }
+
+    B <- bdiag_tridiagonal(lapply(parts, function(k) {
+      .ou_precision(
+        diff_time_since_parts[[k]],
+        1 / ell[k],
+        precision_parts[[k]] * gamma[k] / rho[k],
+        cross_precision_parts[[k]] * gamma[k] / rho[k]
+      )
+    }))
+
+    O <- TridiagonalMatrix(
+      A@x + B@major,
+      B@minor
+    )
+
+    WoodburyMatrix(
+      A,
+      B,
+      O = O,
+      symmetric = TRUE
+    )
+  }, cache = .cache_memory_fifo())
+}
+
+.ou_precision <- function(diff_x, lambda, precisions, cross_precisions) {
+  if (length(precisions) == 1) {
+    return(TridiagonalMatrix(
+      precisions,
+      numeric(0)
+    ))
+  }
+
+  e_lambda_d_x <- exp(-lambda * diff_x)
+  e_2lambda_d_x <- exp(-2 * lambda * diff_x)
+
+  r <- e_2lambda_d_x / (1 - e_2lambda_d_x)
+  major <- c(r, 0) + c(0, r) + 1
+  minor <- -e_lambda_d_x / (1 - e_2lambda_d_x)
+
+  TridiagonalMatrix(
+    major * precisions,
+    minor * cross_precisions
+  )
+}

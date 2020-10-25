@@ -22,7 +22,7 @@ test_that('outputs have correct dimensions', {
   }
   n_beta <- 1
   expect_equal(dim(model$C), c(nrow(observations), nrow(control_mole_fraction)))
-  expect_equal(dim(model$measurement_covariance), rep(nrow(observations), 2))
+  expect_equal(length(model$measurement_variance), nrow(observations))
   expect_equal(dim(model$A), c(nrow(observations), n_beta))
   expect_length(model$beta_prior_mean, n_beta)
   expect_equal(dim(model$beta_prior_precision), rep(n_beta, 2))

@@ -2,8 +2,12 @@
   measurement_model,
   process_model,
   X = .make_X_omega(process_model, measurement_model),
-  solve_Q_epsilon = .make_solve_Q_epsilon(measurement_model),
-  Xt_Q_epsilon_X = .make_Xt_Q_epsilon_X(X, measurement_model),
+  Sigma_epsilon = .make_Sigma_epsilon(measurement_model),
+  Xt_Q_epsilon_X = .make_Xt_Q_epsilon_X(
+    X,
+    measurement_model,
+    Sigma_epsilon = Sigma_epsilon
+  ),
   mu_omega = .make_mu_omega(process_model, measurement_model),
   Q_omega = .make_Q_omega(process_model, measurement_model),
   chol_Q_omega_conditional = .make_chol_Q_omega_conditional(
@@ -21,7 +25,7 @@
     chol_Q_omega_conditional_i <- chol_Q_omega_conditional(current)
     mu_omega_conditional <- as.vector(.chol_solve(
       chol_Q_omega_conditional_i,
-      crossprod(X, solve_Q_epsilon(Z2_tilde, current))
+      crossprod(X, solve(Sigma_epsilon(current), Z2_tilde))
       + Q_omega(current) %*% mu_omega(current)
     ))
     omega <- (

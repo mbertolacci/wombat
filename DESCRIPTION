@@ -24,7 +24,8 @@ Imports:
     digest,
     sf,
     progress,
-    tidyr
+    tidyr,
+    fastsparse
 RoxygenNote: 7.1.1
 Suggests: 
     testthat,
@@ -33,4 +34,5 @@ Suggests:
     shinyWidgets,
     colourpicker,
     rnaturalearth,
-    rnaturalearthdata
+    rnaturalearthdata,
+    tensorflow

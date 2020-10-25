@@ -3,7 +3,7 @@
   process_model,
   tuning = list(w = 1, max_evaluations = 100),
   X = .make_X_omega(process_model, measurement_model),
-  Q_epsilon = .make_Q_epsilon(measurement_model),
+  Sigma_epsilon = .make_Sigma_epsilon(measurement_model),
   Z2_tilde = calculate(measurement_model, 'Z2_tilde', process_model)
 ) {
   if (!is.null(measurement_model[['gamma']])) {
@@ -49,8 +49,10 @@
       z_i[attenuation_index != i] <- 0
       z_i
     })
+    current2 <- current
+    current2$gamma[seq_along(current2$gamma)] <- 1
     s_z_part <- lapply(seq_len(n_gamma), function(i) {
-      as.vector(solve(measurement_model$measurement_covariance, z_part[[i]]))
+      as.vector(solve(Sigma_epsilon(current2), z_part[[i]]))
     })
 
     part_x <- apply(part_ij, 1, function(ij) {
@@ -96,7 +98,7 @@
         }, learn = warming_up, include_n_evaluations = TRUE)
 
         log_trace(
-          'gamma[{i}] took {output$n_evaluations} evaluations, w = {output$w}'
+          'gamma[{i}] = {round(output$sample, 3)} took {output$n_evaluations} evaluations, w = {output$w}'
         )
         current$gamma[i] <- output$sample
       }

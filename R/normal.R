@@ -21,12 +21,29 @@
 }
 
 .sample_normal_covariance <- function(S) {
-  as.vector(crossprod(chol(S), rnorm(ncol(S))))
+  if (is(S, 'WoodburyMatrix')) {
+    rwnorm(1, covariance = S)
+  } else {
+    as.vector(crossprod(chol(S), rnorm(ncol(S))))
+  }
 }
 
-.sample_normal_woodbury <- function(W) {
-  .sample_normal_precision(W@A) + as.vector(W@X %*% .sample_normal_precision(W@B))
+
+.sample_Q <- function(n, Q) {
+  z <- matrix(stats::rnorm(n * nrow(Q)), nrow = nrow(Q))
+
+  if (is(Q, 'denseMatrix')) {
+    solve(chol(Q), z)
+  } else {
+    chol_Q <- Cholesky(Q, LDL = FALSE)
+    solve(chol_Q, solve(
+      chol_Q,
+      z,
+      system = 'Lt'
+    ), system = 'Pt')
+  }
 }
+
 
 .dmvnorm <- function(x, mean, covariance, precision, log = FALSE) {
   if (missing(mean)) mean <- 0
@@ -42,9 +59,32 @@
     as.numeric(
       - 0.5 * (length(x) * log(2 * pi))
       + 0.5 * determinant(precision, logarithm = TRUE)$modulus
-      - 0.5 * crossprod(z, precison %*% z)
+      - 0.5 * crossprod(z, precision %*% z)
     )
   }
 
   if (log) output else exp(output)
+}
+
+.rmvnorm <- function(mean, covariance, precision) {
+  if (missing(mean)) mean <- 0
+
+  if (!missing(covariance)) {
+    if (is(covariance, 'WoodburyMatrix')) {
+      (
+        mean
+        + .rmvnorm(precision = covariance@A)
+        + covariance@X %*% .rmvnorm(precision = covariance@B)
+      )
+    } else {
+      mean + as.vector(crossprod(chol(covariance), rnorm(ncol(covariance))))
+    }
+  } else if (!missing(precision)) {
+    if (is(precision, 'STridiagonalMatrix')) {
+      precision <- instantiate(precision)
+    }
+    mean + .sample_Q(1, precision)
+  } else {
+    stop('One of precision or covariance must be provided')
+  }
 }

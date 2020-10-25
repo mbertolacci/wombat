@@ -1,6 +1,7 @@
 #' @import methods
 #' @import Matrix
 #' @import WoodburyMatrix
+#' @import fastsparse
 #' @import RcppEigen
 #' @import dplyr
 #' @import ggplot2

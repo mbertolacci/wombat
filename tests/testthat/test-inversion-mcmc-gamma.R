@@ -7,13 +7,15 @@ test_that('quantiles are estimated correctly', {
     perturbations,
     sensitivities
   )
-  observations$co2 <- rnorm(2)
+  observations$co2 <- rnorm(nrow(observations))
   measurement_model <- flux_measurement_model(
     observations,
     ~ instrument_mode,
     observations$observation_id,
     process_model,
-    attenuation_variables = 'instrument_mode'
+    attenuation_variables = 'instrument_mode',
+    rho = rep(0, 2),
+    ell = rep(1, 2)
   )
 
   gamma_sampler <- .make_gamma_sampler(
@@ -25,7 +27,9 @@ test_that('quantiles are estimated correctly', {
     gamma = rep(1, 2),
     alpha = rep(0, 6),
     eta = rep(0, 16),
-    beta = rep(0, 1)
+    beta = rep(0, 1),
+    rho = measurement_model$rho,
+    ell = measurement_model$ell
   )
 
   log_gamma_conditional <- function(gamma) {

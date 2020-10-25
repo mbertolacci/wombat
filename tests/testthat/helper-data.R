@@ -2,7 +2,7 @@ library(lubridate, warn.conflicts = FALSE)
 
 month_starts <- as.Date(c('2016-01-01', '2016-02-01', '2016-03-01'))
 regions <- 1 : 2
-model_ids <- 1 : 3
+model_ids <- 1 : 5
 
 control_emissions <- expand.grid(
   month_start = month_starts,
@@ -29,7 +29,7 @@ perturbations <- expand.grid(
 
 control_mole_fraction <- data.frame(
   model_id = model_ids,
-  time = lubridate::ymd_hm(c('2016-01-03 10:00', '2016-02-03 10:00', '2016-03-03 10:00'))
+  time = lubridate::ymd_hm(c('2016-01-03 09:00', '2016-01-03 10:00', '2016-02-03 10:00', '2016-03-03 10:00', '2016-03-03 11:00'))
 ) %>%
   mutate(
     co2 = 0,
@@ -44,7 +44,8 @@ sensitivities <- expand.grid(
   mutate(co2_sensitivity = 1)
 
 observations <- data.frame(
-  observation_id = 1 : 2,
-  instrument_mode = c('LN', 'LG'),
-  co2_error = c(1, 2)
+  observation_id = 1 : 3,
+  instrument_mode = c('LG', 'LG', 'LN'),
+  time = lubridate::ymd_hm(c('2016-01-03 09:00', '2016-01-03 10:00', '2016-02-03 10:00')),
+  co2_error = c(1, 2, 1)
 )

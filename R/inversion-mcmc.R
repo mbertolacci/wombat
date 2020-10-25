@@ -6,9 +6,12 @@ inversion_mcmc <- function(
   start = NULL,
   warm_up = 100,
   tuning = list(
-    a = list(w = 0.25, max_evaluations = 100),
-    gamma = list(w = 1, max_evaluations = 100)
+    a = list(w = 0.25, min_w = 0.1, max_evaluations = 100),
+    gamma = list(w = 1, min_w = 0.1, max_evaluations = 100),
+    rho = list(w = 0.1, min_w = 0.05, max_evaluations = 100),
+    ell = list(w = 1, min_w = 0.1, max_evaluations = 100)
   ),
+  use_tensorflow = FALSE,
   show_progress = TRUE
 ) {
   if (!missing(tuning)) {
@@ -19,17 +22,42 @@ inversion_mcmc <- function(
   n_eta <- ncol(process_model$Psi)
   n_beta <- ncol(measurement_model$A)
   n_times <- n_alpha / length(process_model$regions)
-  n_w <- length(process_model$regions)
+  n_a <- nlevels(process_model$a_factor)
+  n_w <- nlevels(process_model$w_factor)
   n_gamma <- nlevels(measurement_model$attenuation_factor)
 
   log_debug('Precomputing various quantities')
-  omega_sampler <- .make_omega_sampler(measurement_model, process_model)
+  X <- .make_X_omega(process_model, measurement_model)
+  Sigma_epsilon <- .make_Sigma_epsilon(measurement_model)
+  if (use_tensorflow) {
+    Xt_Q_epsilon_X <- .make_Xt_Q_epsilon_X_tf(X, measurement_model, Sigma_epsilon = Sigma_epsilon)
+  } else {
+    Xt_Q_epsilon_X <- .make_Xt_Q_epsilon_X(X, measurement_model, Sigma_epsilon = Sigma_epsilon)
+  }
+
+  omega_sampler <- .make_omega_sampler(
+    measurement_model,
+    process_model,
+    Xt_Q_epsilon_X = Xt_Q_epsilon_X
+  )
   a_sampler <- .make_a_sampler(process_model, tuning[['a']])
   w_sampler <- .make_w_sampler(process_model)
   gamma_sampler <- .make_gamma_sampler(
     measurement_model,
     process_model,
     tuning = tuning[['gamma']]
+  )
+  rho_sampler <- .make_rho_ell_sampler(
+    measurement_model,
+    process_model,
+    tuning = tuning[['rho']],
+    name = 'rho'
+  )
+  ell_sampler <- .make_rho_ell_sampler(
+    measurement_model,
+    process_model,
+    tuning = tuning[['ell']],
+    name = 'ell'
   )
 
   log_debug('Setting start values')
@@ -39,22 +67,27 @@ inversion_mcmc <- function(
   start <- .extend_list(
     c(
       generated_process_model,
-      generate(measurement_model)[c('beta', 'gamma')]
+      generate(measurement_model)[c('beta', 'gamma', 'rho', 'ell')]
     ),
     start,
     .remove_nulls(process_model[c('alpha', 'eta', 'a', 'w')]),
-    .remove_nulls(process_model[c('beta', 'gamma')])
-  )[c('alpha', 'eta', 'beta', 'a', 'w', 'gamma')]
+    .remove_nulls(measurement_model[c('beta', 'gamma', 'rho', 'ell')])
+  )[c('alpha', 'eta', 'beta', 'a', 'w', 'gamma', 'rho', 'ell')]
+  if (any(is.na(start$a))) {
+    start$a[is.na(start$a)] <- generated_process_model$a[is.na(start$a)]
+  }
   if (any(is.na(start$w))) {
     start$w[is.na(start$w)] <- generated_process_model$w[is.na(start$w)]
   }
 
   alpha_samples <- matrix(NA, nrow = n_iterations, ncol = n_alpha)
   eta_samples <- matrix(NA, nrow = n_iterations, ncol = n_eta)
-  a_samples <- matrix(NA, nrow = n_iterations, ncol = 1)
+  a_samples <- matrix(NA, nrow = n_iterations, ncol = n_a)
   w_samples <- matrix(NA, nrow = n_iterations, ncol = n_w)
   beta_samples <- matrix(NA, nrow = n_iterations, ncol = n_beta)
   gamma_samples <- matrix(NA, nrow = n_iterations, ncol = n_gamma)
+  rho_samples <- matrix(NA, nrow = n_iterations, ncol = n_gamma)
+  ell_samples <- matrix(NA, nrow = n_iterations, ncol = n_gamma)
 
   current <- start
 
@@ -64,6 +97,8 @@ inversion_mcmc <- function(
   w_samples[1, ] <- current$w
   beta_samples[1, ] <- current$beta
   gamma_samples[1, ] <- current$gamma
+  rho_samples[1, ] <- current$rho
+  ell_samples[1, ] <- current$ell
 
   if (show_progress) {
     pb <- progress::progress_bar$new(
@@ -86,10 +121,16 @@ inversion_mcmc <- function(
     current <- a_sampler(current, iteration <= warm_up)
 
     log_trace('[{iteration}/{n_iterations}] Sampling w')
-    current <- w_sampler(current)
+    current <- w_sampler(current, iteration <= warm_up)
 
     log_trace('[{iteration}/{n_iterations}] Sampling gamma')
     current <- gamma_sampler(current, iteration <= warm_up)
+
+    log_trace('[{iteration}/{n_iterations}] Sampling rho')
+    current <- rho_sampler(current, iteration <= warm_up)
+
+    log_trace('[{iteration}/{n_iterations}] Sampling ell')
+    current <- ell_sampler(current, iteration <= warm_up)
 
     alpha_samples[iteration, ] <- current$alpha
     eta_samples[iteration, ] <- current$eta
@@ -97,6 +138,8 @@ inversion_mcmc <- function(
     w_samples[iteration, ] <- current$w
     beta_samples[iteration, ] <- current$beta
     gamma_samples[iteration, ] <- current$gamma
+    rho_samples[iteration, ] <- current$rho
+    ell_samples[iteration, ] <- current$ell
   }
 
   region_month <- expand.grid(
@@ -109,10 +152,12 @@ inversion_mcmc <- function(
     region_month$month_index
   )
   colnames(eta_samples) <- sprintf('eta[%d]', seq_len(ncol(eta_samples)))
-  colnames(a_samples) <- 'a'
-  colnames(w_samples) <- sprintf('w[%d]', seq_len(ncol(w_samples)))
+  colnames(a_samples) <- levels(process_model$a_factor)
+  colnames(w_samples) <- levels(process_model$w_factor)
   colnames(beta_samples) <- colnames(measurement_model$A)
   colnames(gamma_samples) <- levels(measurement_model$attenuation_factor)
+  colnames(rho_samples) <- levels(measurement_model$attenuation_factor)
+  colnames(ell_samples) <- levels(measurement_model$attenuation_factor)
 
   structure(
     list(
@@ -121,7 +166,9 @@ inversion_mcmc <- function(
       a = coda::mcmc(a_samples),
       w = coda::mcmc(w_samples),
       beta = coda::mcmc(beta_samples),
-      gamma = coda::mcmc(gamma_samples)
+      gamma = coda::mcmc(gamma_samples),
+      rho = coda::mcmc(rho_samples),
+      ell = coda::mcmc(ell_samples)
     ),
     class = 'flux_inversion_mcmc'
   )
@@ -144,25 +191,25 @@ plot_traces <- function(object, n_columns = 4) {
       mutate(name = factor(name, levels = colnames(x)))
   }
 
-  trace_plot <- function(x) {
+  trace_plot <- function(x, is_parsed = TRUE) {
     df <- matrix_to_long_df(x)
 
     df_summary <- df %>%
       group_by(name) %>%
       summarise(
-        q10 = quantile(value, probs = 0.10),
-        q50 = quantile(value, probs = 0.50),
+        q025 = quantile(value, probs = 0.025),
+        q500 = quantile(value, probs = 0.5),
         mean = mean(value),
-        q90 = quantile(value, probs = 0.90)
+        q975 = quantile(value, probs = 0.975)
       ) %>%
       ungroup() %>%
       mutate(
         label = sprintf(
-          'mean = %.03g | 10%% = %.03g | 50%% = %.03g | 90%% = %.03g',
+          'mean = %.03g | 2.5%% = %.03g | 50%% = %.03g | 97.5%% = %.03g',
           mean,
-          q10,
-          q50,
-          q90
+          q025,
+          q500,
+          q975
         )
       )
 
@@ -181,7 +228,7 @@ plot_traces <- function(object, n_columns = 4) {
         ~ name,
         scales = 'free_y',
         ncol = n_columns,
-        labeller = 'label_parsed'
+        labeller = if (is_parsed) 'label_parsed' else label_value
       ) +
       ggplot2::labs(x = NULL, y = NULL)
   }
@@ -200,9 +247,11 @@ plot_traces <- function(object, n_columns = 4) {
       trace_plot(alpha_subset),
       trace_plot(eta_subset),
       if (ncol(object$beta) > 0) trace_plot(object$beta) else NULL,
-      trace_plot(object$a),
-      trace_plot(object$w),
-      trace_plot(object$gamma)
+      trace_plot(object$a, FALSE),
+      trace_plot(object$w, FALSE),
+      trace_plot(object$gamma, FALSE),
+      trace_plot(object$rho, FALSE),
+      trace_plot(object$ell, FALSE)
     )),
     left = 'Value',
     bottom = 'Iteration',
@@ -210,9 +259,11 @@ plot_traces <- function(object, n_columns = 4) {
       ncol(alpha_subset),
       ncol(eta_subset),
       if (ncol(object$beta) > 0) ncol(object$beta) else NULL,
-      n_columns,
+      ncol(object$a),
       ncol(object$w),
-      ncol(object$gamma)
+      ncol(object$gamma),
+      ncol(object$rho),
+      ncol(object$ell)
     ) / n_columns)
   )
 }

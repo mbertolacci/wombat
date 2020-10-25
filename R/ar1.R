@@ -1,12 +1,4 @@
-#' Compute the precision matrix for an AR(1) process
-#'
-#' Computes the sparse precision matrix for an AR(1) process. If n_times is 1,
-#' just returns the 1x1 identity matrix.
-#'
-#' @param n_times Number of time periods
-#' @param rho The autocorrelation parameter, between -1 and 1
-#' @export
-ar1_Q <- function(n_times, rho) {
+.ar1_Q <- function(n_times, rho) {
   if (n_times == 1) {
     return(t(sparseMatrix(i = 1, j = 1, x = 1, symmetric = TRUE)))
   }

@@ -41,13 +41,13 @@
 #' lines(x, exp(myfun(x)), xpd = NA)
 #'
 #' ## End(Not run)
-slice <- function(w, max_evaluations = 100) {
-  toggle <- TRUE
+slice <- function(w, min_w = 0, max_evaluations = 100) {
+  learning <- TRUE
   sum <- 0
   n <- 0
 
   function(x0, logf, learn = FALSE, include_n_evaluations = FALSE) {
-    # sort out the learning.  Only learn when toggle == TRUE
+    # sort out the learning.  Only learn when learning == TRUE
     n_evaluations <- 1
     logf_count <- function(x) {
       output <- logf(x)
@@ -57,11 +57,11 @@ slice <- function(w, max_evaluations = 100) {
     }
 
     if (learn) {
-      if (!toggle) toggle <<- TRUE
+      if (!learning) learning <<- TRUE
     } else {
-      if (toggle) {
-        if (n > 0) w <<- sum / n
-        toggle <<- FALSE
+      if (learning) {
+        if (n > 0) w <<- max(min_w, sum / n)
+        learning <<- FALSE
       }
     }
 
@@ -86,7 +86,7 @@ slice <- function(w, max_evaluations = 100) {
 
     # implement the learning and return new value
 
-    if (toggle) {
+    if (learning) {
       sum <<- sum + abs(x1 - x0) # as suggested, sec 4.4
       n <<- n + 1
     }

@@ -1,37 +1,39 @@
 .make_a_sampler <- function(
   model,
-  tuning = list(w = 0.25, max_evaluations = 100),
-  Q_alpha = .make_Q_alpha(model)
+  tuning,
+  alpha_log_likelihood = .make_alpha_log_likelihood(model)
 ) {
-  if (!is.null(model[['a']])) {
-    return(function(current, ...) {
-      current$a <- model[['a']]
-      current
-    })
-  }
+  n_times <- ncol(model$H) / length(model$regions)
+  n_params <- nlevels(model$a_factor)
 
-  a_slice <- do.call(slice, tuning)
+  part_slice <- lapply(seq_len(n_params), function(i) {
+    do.call(slice, tuning)
+  })
 
   function(current, warming_up) {
-    output <- a_slice(current$a, function(a) {
-      if (a <= 0 || a >= 1) return(-Inf)
-      current2 <- current
-      current2$a <- a
+    for (i in seq_len(n_params)) {
+      if (!is.null(model[['a']]) && !is.na(model$a[i])) next
 
-      log_prior_value <- log_prior(model, current2)
-      if (!is.finite(log_prior_value)) return(log_prior_value)
+      output <- part_slice[[i]](
+        current$a[i],
+        function(param_i) {
+          current2 <- current
+          current2$a[i] <- param_i
 
-      output <- log_prior_value + .log_pdf_precision_cholesky(
-        current$alpha,
-        chol(Q_alpha(current2))
+          log_prior_value <- log_prior(model, current2)
+          if (!is.finite(log_prior_value)) return(log_prior_value)
+
+          log_prior_value + alpha_log_likelihood(current2)
+        },
+        learn = warming_up,
+        include_n_evaluations = TRUE
       )
-    }, learn = warming_up, include_n_evaluations = TRUE)
+      log_trace(
+        'a[{i}] = {round(output$sample, 3)} took {output$n_evaluations} evaluations, w = {output$w}'
+      )
+      current$a[i] <- output$sample
+    }
 
-    log_trace(
-      'a sampler took {output$n_evaluations} evaluations, w = {output$w}'
-    )
-
-    current$a <- output$sample
     current
   }
 }

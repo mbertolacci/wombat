@@ -14,9 +14,20 @@ flux_process_model <- function(
   alpha,
   alpha_prior_mean = 0,
   a,
-  a_prior = c(0.5, 1),
+  a_prior = list(
+    shape1 = 1,
+    shape2 = 1
+  ),
+  a_factor = factor(
+    sprintf('Region %d', sort(unique(perturbations$region))),
+    levels = sprintf('Region %d', sort(unique(perturbations$region)))
+  ),
   w,
   w_prior = gamma_quantile_prior(1 / 10 ^ 2, 1 / 0.1 ^ 2),
+  w_factor = factor(
+    sprintf('Region %d', sort(unique(perturbations$region))),
+    levels = sprintf('Region %d', sort(unique(perturbations$region)))
+  ),
   Psi = latitudinal_random_effects(control_mole_fraction),
   eta,
   eta_prior_mean = 0,
@@ -33,9 +44,6 @@ flux_process_model <- function(
   stopifnot_within(perturbations$from_month_start, sensitivities$from_month_start)
   stopifnot_within(perturbations$region, sensitivities$region)
   stopifnot_within(sensitivities$model_id, control_mole_fraction$model_id)
-
-  control_mole_fraction <- control_mole_fraction %>%
-    arrange(model_id)
 
   stopifnot(!is.unsorted(control_mole_fraction$time))
 
@@ -78,9 +86,12 @@ flux_process_model <- function(
   }
 
   stopifnot(ncol(H) == ncol(Phi))
+  stopifnot(is.list(a_prior))
   stopifnot(length(a_prior) == 2)
+  stopifnot(length(a_factor) == length(regions))
   stopifnot(is.list(w_prior))
   stopifnot(length(w_prior) == 2 || length(w_prior) == 4)
+  stopifnot(length(w_factor) == length(regions))
   stopifnot(nrow(eta_prior_precision) == ncol(Psi))
   stopifnot(ncol(eta_prior_precision) == ncol(Psi))
 
@@ -97,8 +108,10 @@ flux_process_model <- function(
     'alpha_prior_mean',
     'a',
     'a_prior',
+    'a_factor',
     'w',
     'w_prior',
+    'w_factor',
     'Psi',
     'eta',
     'eta_prior_mean',
@@ -119,8 +132,10 @@ update.flux_process_model <- function(model, ...) {
     'alpha_prior_mean',
     'a',
     'a_prior',
+    'a_factor',
     'w',
     'w_prior',
+    'w_factor',
     'Psi',
     'eta',
     'eta_prior_mean',
@@ -233,20 +248,32 @@ latitudinal_random_effects <- function(
 
 #' @export
 generate.flux_process_model <- function(model, n_samples = 1) {
-  if (is.null(model[['a']])) {
-    model$a <- replicate(
-      n_samples,
-      .rnorm_truncated(1, model$a_prior[1], model$a_prior[2], 0, 1)
-    )
+  a_sample <- t(replicate(n_samples, rbeta(
+    nlevels(model$a_factor),
+    shape1 = model$a_prior[['shape1']],
+    shape2 = model$a_prior[['shape2']]
+  )))
+  if (!is.null(model[['a']])) {
+    is_fixed <- which(!is.na(model$a))
+    fixed_a <- model$a[is_fixed]
+    model$a <- a_sample
+    for (i in seq_along(is_fixed)) {
+      model$a[, is_fixed[i]] <- fixed_a[i]
+    }
+  } else {
+    model$a <- a_sample
   }
 
   # Not yet supported
   stopifnot(!('lower' %in% model$w_prior))
   w_sample <- t(replicate(n_samples, rgamma(
-    length(model$regions),
-    shape = model$w_prior[['shape']],
-    rate = model$w_prior[['rate']]
+    nlevels(model$w_factor),
+    shape = ifelse(model$w_prior[['shape']] <= 0, 1, model$w_prior[['shape']]),
+    rate = ifelse(model$w_prior[['rate']] <= 0, 1, model$w_prior[['rate']])
   )))
+  if (any(model$w_prior[['shape']] < 0 | model$w_prior[['rate']] < 0)) {
+    warning('Improper prior for w; generating values using incorrect proper prior')
+  }
   if (!is.null(model[['w']])) {
     is_fixed <- which(!is.na(model$w))
     fixed_w <- model$w[is_fixed]
@@ -266,10 +293,11 @@ generate.flux_process_model <- function(model, n_samples = 1) {
   }
 
   if (is.null(model[['alpha']])) {
+    a_matrix <- .as_matrix(model$a)
     w_matrix <- .as_matrix(model$w)
     model$alpha <- t(sapply(seq_len(n_samples), function(index) {
       .sample_normal_precision(.make_Q_alpha(model)(list(
-        a = model$a[.recycle_index(index, length(model$a))],
+        a = a_matrix[.recycle_index(index, nrow(a_matrix)), ],
         w = w_matrix[.recycle_index(index, nrow(w_matrix)), ]
       )))
     }))
@@ -286,7 +314,7 @@ generate.flux_process_model <- function(model, n_samples = 1) {
     if (is.matrix(x) && nrow(x) == 1) x[1, ] else x
   }
 
-  for (x in c('w', 'alpha', 'eta')) {
+  for (x in c('a', 'w', 'alpha', 'eta')) {
     model[[x]] <- simplify(model[[x]])
   }
 
@@ -344,25 +372,31 @@ calculate.flux_process_model <- function(
 log_prior.flux_process_model <- function(model, parameters = model) {
   output <- 0
 
-  if (is.null(model[['a']])) {
-    if (parameters$a <= 0 || parameters$a >= 1) return(-Inf)
-
-    output <- output + dnorm(
-      parameters$a,
-      mean = model$a_prior[1],
-      sd = model$a_prior[2],
+  if (is.null(model[['a']]) || anyNA(model[['a']])) {
+    a_shape1 <- .recycle_vector_to(model$a_prior[['shape1']], length(parameters$a))
+    a_shape2 <- .recycle_vector_to(model$a_prior[['shape2']], length(parameters$a))
+    a_na <- if (is.null(model[['a']])) seq_len(length(parameters$a)) else is.na(model[['a']])
+    output <- output + sum(dbeta(
+      parameters$a[a_na],
+      shape1 = a_shape1[a_na],
+      shape2 = a_shape2[a_na],
       log = TRUE
-    )
+    ))
   }
 
-  if (is.null(model[['w']])) {
-    if (any(parameters$w <= 0)) return(-Inf)
-
-    output <- output + sum(dgamma(
-      parameters$w,
-      shape = model$w_prior[['shape']],
-      rate = model$w_prior[['rate']],
-      log = TRUE
+  if (is.null(model[['w']]) || anyNA(model[['w']])) {
+    w_shape <- .recycle_vector_to(model$w_prior[['shape']], length(parameters$w))
+    w_rate <- .recycle_vector_to(model$w_prior[['rate']], length(parameters$w))
+    w_na <- if (is.null(model[['w']])) seq_len(length(parameters$w)) else is.na(model[['w']])
+    output <- output + sum(ifelse(
+      w_shape[w_na] <= 0 | w_rate[w_na] <= 0,
+      if (any(parameters$w[w_na] <= 0)) -Inf else 0,
+      dgamma(
+        parameters$w[w_na],
+        shape = w_shape[w_na],
+        rate = w_rate[w_na],
+        log = TRUE
+      )
     ))
   }
 
@@ -454,17 +488,50 @@ aggregate_flux <- function(model, filter_expr = TRUE, parameters = model) {
 
 .make_Q_alpha <- function(model) {
   n_alpha <- ncol(model$H)
-  n_w <- length(model$regions)
-  n_times <- n_alpha / n_w
+  n_regions <- length(model$regions)
+  n_times <- n_alpha / n_regions
+
+  permutation <- rep(0, n_alpha)
+  for (i in seq_len(n_times)) {
+    permutation[
+      (1 + (i - 1) * n_regions) : (i * n_regions)
+    ] <- i + (0 : (n_regions - 1)) * n_times
+  }
+
+  function(params, parts = seq_len(n_regions)) {
+    a_region <- params$a[model$a_factor]
+    w_region <- params$w[model$w_factor]
+    bdiag(lapply(parts, function(i) {
+      w_region[i] * .ar1_Q(n_times, a_region[i])
+    }))[
+      permutation,
+      permutation
+    ]
+  }
+}
+
+.make_alpha_log_likelihood <- function(model) {
+  n_times <- ncol(model$H) / length(model$regions)
 
   function(params) {
-    Q_alpha_t <- ar1_Q(n_times, params$a)
-    Q_alpha_s <- t(sparseMatrix(
-      i = seq_len(n_w),
-      j = seq_len(n_w),
-      x = params$w,
-      symmetric = TRUE
+    a_region <- params$a[model$a_factor]
+    w_region <- params$w[model$w_factor]
+
+    alpha_matrix <- matrix(params$alpha, ncol = n_times)
+    alpha_rhs <- alpha_matrix[, 1 : (ncol(alpha_matrix) - 1)]
+    alpha_mean <- cbind(0, a_region * alpha_rhs)
+    alpha_sd <- 1 / sqrt(cbind(
+      w_region,
+      # HACK(mgnb): first term makes a zero matrix with the right shape,
+      # second term sets each column to the right value
+      0 * alpha_rhs + w_region / (1 - a_region ^ 2)
     ))
-    kronecker(Q_alpha_t, Q_alpha_s)
+
+    sum(dnorm(
+      alpha_matrix,
+      mean = alpha_mean,
+      sd = alpha_sd,
+      log = TRUE
+    ))
   }
 }
