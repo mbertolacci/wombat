@@ -394,14 +394,18 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
   as(At, 'dgCMatrix')
 }
 
-.Xt_Q_epsilon_X_parts <- function(X, model, Sigma_epsilon) {
+.Xt_Q_epsilon_X_parts <- function(X, model, Sigma_epsilon, has_cross_correlations) {
   attenuation_index <- as.integer(model$attenuation_factor)
   n_gamma <- nlevels(model$attenuation_factor)
   n_per_gamma <- table(model$attenuation_factor)
 
   part_ij <- rbind(
     cbind(seq_len(n_gamma), seq_len(n_gamma)),
-    if (n_gamma > 1) t(combn(n_gamma, 2)) else NULL
+    if (has_cross_correlations && n_gamma > 1) {
+      t(combn(n_gamma, 2))
+    } else {
+      NULL
+    }
   )
   part_x <- apply(part_ij, 1, function(ij) {
     i <- ij[1]
@@ -446,7 +450,12 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
   get_parts <- memoise::memoise(function(params) {
     params$gamma <- params$rho
     params$gamma[seq_along(params$gamma)] <- 1
-    .Xt_Q_epsilon_X_parts(X, model, Sigma_epsilon(params))
+    .Xt_Q_epsilon_X_parts(
+      X,
+      model,
+      Sigma_epsilon(params),
+      attr(Sigma_epsilon, 'has_cross_correlations')
+    )
   }, cache = .cache_memory_fifo())
 
   actual <- memoise::memoise(function(params) {
@@ -482,6 +491,10 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
     stop('tensorflow requested but not installed')
   }
   tf <- tensorflow::tf
+
+  if (attr(Sigma_epsilon, 'has_cross_correlations')) {
+    stop('Cross correlations in Sigma_epsilon not supported with Tensorflow')
+  }
 
   as_tf <- function(x, ...) {
     tf$convert_to_tensor(x, dtype = tf$float32, ...)
@@ -540,8 +553,7 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
       head(sd_x, -1) * tail(sd_x, -1)
     })
 
-
-  memoise::memoise(function(params, parts = seq_len(n_parts)) {
+  output <- memoise::memoise(function(params, parts = seq_len(n_parts)) {
     gamma <- params$gamma
     rho <- params$rho
     ell <- params$ell
@@ -581,6 +593,8 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
       symmetric = TRUE
     )
   }, cache = .cache_memory_fifo())
+  attr(output, 'has_cross_correlations') <- FALSE
+  output
 }
 
 .ou_precision <- function(diff_x, lambda, precisions, cross_precisions) {
