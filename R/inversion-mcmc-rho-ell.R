@@ -45,21 +45,26 @@
     for (i in seq_len(n_parts)) {
       z_i <- z[attenuation_index == i]
 
-      output <- part_slice[[i]](current[[name]][i], function(param_i) {
-        current2 <- current
-        current2[[name]][i] <- param_i
+      tryCatch({
+        output <- part_slice[[i]](current[[name]][i], function(param_i) {
+          current2 <- current
+          current2[[name]][i] <- param_i
 
-        log_prior_value <- log_prior(measurement_model, current2)
-        if (!is.finite(log_prior_value)) return(log_prior_value)
+          log_prior_value <- log_prior(measurement_model, current2)
+          if (!is.finite(log_prior_value)) return(log_prior_value)
 
-        (
-          log_prior_value
-          + .dmvnorm(z_i, covariance = Sigma_epsilon(
-            current2,
-            parts = i
-          ), log = TRUE)
-        )
-      }, learn = warming_up, include_n_evaluations = TRUE)
+          (
+            log_prior_value
+            + .dmvnorm(z_i, covariance = Sigma_epsilon(
+              current2,
+              parts = i
+            ), log = TRUE)
+          )
+        }, learn = warming_up, include_n_evaluations = TRUE)
+      }, error = function(e) {
+        log_error('{name}[{i}] sampler failed (group name {levels(measurement_model$attenuation_factor)[i]})')
+        stop(e)
+      })
       log_trace(
         '{name}[{i}] = {round(output$sample, 3)} took {output$n_evaluations} evaluations, w = {output$w}'
       )
