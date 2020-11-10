@@ -4,7 +4,12 @@
 \alias{aggregate_flux}
 \title{Aggregate monthly fluxes according to a constraint}
 \usage{
-aggregate_flux(model, filter_expr = TRUE, parameters = model)
+aggregate_flux(
+  model,
+  filter_expr = TRUE,
+  parameters = model,
+  aggregator = flux_aggregator(model, filter_expr, parameters)
+)
 }
 \description{
 Aggregate monthly fluxes according to a constraint

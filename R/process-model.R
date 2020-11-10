@@ -403,13 +403,8 @@ log_prior.flux_process_model <- function(model, parameters = model) {
   output
 }
 
-#' Aggregate monthly fluxes according to a constraint
 #' @export
-aggregate_flux <- function(model, filter_expr = TRUE, parameters = model) {
-  if (missing(parameters) && !('alpha' %in% names(model))) {
-    parameters <- list(alpha = model$alpha_prior_mean)
-  }
-
+flux_aggregator <- function(model, filter_expr) {
   filter_expr <- enquo(filter_expr)
 
   control_aggregate <- model$control_emissions %>%
@@ -455,35 +450,44 @@ aggregate_flux <- function(model, filter_expr = TRUE, parameters = model) {
     left_join(row_indices, by = 'month_start') %>%
     left_join(column_indices, by = c('from_month_start', 'region'))
 
-  Phi_aggregate <- sparseMatrix(
-    i = Phi_aggregate_df$i,
-    j = Phi_aggregate_df$j,
-    x = Phi_aggregate_df$total_flux,
-    dims = c(
-      nrow(row_indices),
-      nrow(column_indices)
+  list(
+    total = control_aggregate,
+    Phi = sparseMatrix(
+      i = Phi_aggregate_df$i,
+      j = Phi_aggregate_df$j,
+      x = Phi_aggregate_df$total_flux,
+      dims = c(
+        nrow(row_indices),
+        nrow(column_indices)
+      )
     )
-   )
+  )
+}
 
-  area_df <- model$control_emissions %>%
-    mutate(
-      filter_condition = !! filter_expr,
-      area = if_else(filter_condition, area, 0)
-    ) %>%
-    group_by(month_start) %>%
-    summarise(
-      area = sum(area)
-    )
+#' Aggregate monthly fluxes according to a constraint
+#' @export
+aggregate_flux <- function(
+  model,
+  filter_expr = TRUE,
+  parameters = model,
+  aggregator = flux_aggregator(
+    model,
+    filter_expr,
+    parameters
+  )
+) {
+  if (missing(parameters) && !('alpha' %in% names(model))) {
+    parameters <- list(alpha = model$alpha_prior_mean)
+  }
 
   tibble::tibble(
-    month_start = sort(unique(model$control_emissions$month_start)),
+    month_start = aggregator$total$month_start,
     flux = if (is.vector(parameters[['alpha']])) {
-      control_aggregate$total_flux + as.vector(Phi_aggregate %*% parameters[['alpha']])
+      aggregator$total$total_flux + as.vector(aggregator$Phi %*% parameters[['alpha']])
     } else {
-      control_aggregate$total_flux + as.matrix(Phi_aggregate %*% t(parameters[['alpha']]))
+      aggregator$total$total_flux + as.matrix(aggregator$Phi %*% t(parameters[['alpha']]))
     }
-  ) %>%
-    left_join(area_df, by = 'month_start')
+  )
 }
 
 .make_Q_alpha <- function(model) {
