@@ -12,7 +12,16 @@ flux_process_model <- function(
     lag
   ),
   alpha,
-  alpha_prior_mean = 0,
+  Gamma = sparseMatrix(
+    i = seq_len(ncol(H)),
+    j = rep(
+      seq_along(unique(perturbations$region)),
+      ncol(H) / length(unique(perturbations$region))
+    )
+  ),
+  kappa = rep(0, length(unique(perturbations$region))),
+  kappa_prior_mean = 0,
+  kappa_prior_variance = 0.3 ^ 2,
   a,
   a_prior = list(
     shape1 = 1,
@@ -55,11 +64,16 @@ flux_process_model <- function(
     alpha <- .recycle_vector_to(alpha, ncol(H))
   }
 
-  alpha_prior_mean <- .recycle_vector_to(alpha_prior_mean, ncol(H))
+  if (!missing(kappa)) {
+    kappa <- .recycle_vector_to(kappa, length(regions))
+  }
 
   if (!missing(w)) {
     w <- .recycle_vector_to(w, length(regions))
   }
+
+  kappa_prior_mean <- .recycle_vector_to(kappa_prior_mean, ncol(Gamma))
+  kappa_prior_variance <- .recycle_vector_to(kappa_prior_variance, ncol(Gamma))
 
   log_debug('Constructing perturbations basis')
   row_indices <- control_emissions %>%
@@ -105,7 +119,10 @@ flux_process_model <- function(
     'Phi',
     'regions',
     'alpha',
-    'alpha_prior_mean',
+    'Gamma',
+    'kappa',
+    'kappa_prior_mean',
+    'kappa_prior_variance',
     'a',
     'a_prior',
     'a_factor',
@@ -129,7 +146,10 @@ update.flux_process_model <- function(model, ...) {
     'lag',
     'H',
     'alpha',
-    'alpha_prior_mean',
+    'Gamma',
+    'kappa',
+    'kappa_prior_mean',
+    'kappa_prior_variance',
     'a',
     'a_prior',
     'a_factor',
@@ -292,14 +312,27 @@ generate.flux_process_model <- function(model, n_samples = 1) {
     if (length(dim(x)) == 2) x else t(x)
   }
 
+  if (is.null(model[['kappa']])) {
+    model$kappa <- t(replicate(n_samples, rnorm(
+      ncol(model$Gamma),
+      mean = model$kappa_prior_mean,
+      sd = sqrt(model$kappa_prior_variance)
+    )))
+  }
+
   if (is.null(model[['alpha']])) {
     a_matrix <- .as_matrix(model$a)
     w_matrix <- .as_matrix(model$w)
+    kappa_matrix <- .as_matrix(model$kappa)
     model$alpha <- t(sapply(seq_len(n_samples), function(index) {
-      .sample_normal_precision(.make_Q_alpha(model)(list(
-        a = a_matrix[.recycle_index(index, nrow(a_matrix)), ],
-        w = w_matrix[.recycle_index(index, nrow(w_matrix)), ]
-      )))
+      as.vector(
+        model$Gamma %*% kappa_matrix[
+          .recycle_index(index, nrow(kappa_matrix)),
+        ] + .sample_normal_precision(.make_Q_alpha(model)(list(
+          a = a_matrix[.recycle_index(index, nrow(a_matrix)), ],
+          w = w_matrix[.recycle_index(index, nrow(w_matrix)), ]
+        )))
+      )
     }))
   }
 
@@ -314,7 +347,7 @@ generate.flux_process_model <- function(model, n_samples = 1) {
     if (is.matrix(x) && nrow(x) == 1) x[1, ] else x
   }
 
-  for (x in c('a', 'w', 'alpha', 'eta')) {
+  for (x in c('a', 'w', 'kappa', 'alpha', 'eta')) {
     model[[x]] <- simplify(model[[x]])
   }
 
@@ -505,6 +538,7 @@ aggregate_flux <- function(
   function(params, parts = seq_len(n_regions)) {
     a_region <- params$a[model$a_factor]
     w_region <- params$w[model$w_factor]
+    # TODO(mgnb): the permutation is not quite appropriate if parts is not full
     bdiag(lapply(parts, function(i) {
       w_region[i] * .ar1_Q(n_times, a_region[i])
     }))[
@@ -521,7 +555,10 @@ aggregate_flux <- function(
     a_region <- params$a[model$a_factor]
     w_region <- params$w[model$w_factor]
 
-    alpha_matrix <- matrix(params$alpha, ncol = n_times)
+    alpha_matrix <- matrix(
+      params$alpha - as.vector(model$Gamma %*% params$kappa),
+      ncol = n_times
+    )
     alpha_rhs <- alpha_matrix[, 1 : (ncol(alpha_matrix) - 1)]
     alpha_mean <- cbind(0, a_region * alpha_rhs)
     alpha_sd <- 1 / sqrt(cbind(

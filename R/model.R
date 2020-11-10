@@ -52,7 +52,7 @@
   function(params) {
     do.call(c, lapply(variables, function(variable) {
       if (variable == 'alpha') {
-        process_model$alpha_prior_mean
+        as.vector(process_model$Gamma %*% params[['kappa']])
       } else if (variable == 'beta') {
         measurement_model$beta_prior_mean
       } else if (variable == 'eta') {

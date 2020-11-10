@@ -18,6 +18,7 @@ inversion_mcmc <- function(
     tuning <- .extend_list(eval(formals(inversion_mcmc)$tuning), tuning)
   }
 
+  n_kappa <- ncol(process_model$Gamma)
   n_alpha <- ncol(process_model$H)
   n_eta <- ncol(process_model$Psi)
   n_beta <- ncol(measurement_model$A)
@@ -35,6 +36,7 @@ inversion_mcmc <- function(
     Xt_Q_epsilon_X <- .make_Xt_Q_epsilon_X(X, measurement_model, Sigma_epsilon = Sigma_epsilon)
   }
 
+  kappa_sampler <- .make_kappa_sampler(process_model)
   omega_sampler <- .make_omega_sampler(
     measurement_model,
     process_model,
@@ -62,7 +64,7 @@ inversion_mcmc <- function(
 
   log_debug('Setting start values')
   generated_process_model <- generate(process_model)[
-    c('alpha', 'eta', 'a', 'w')
+    c('kappa', 'alpha', 'eta', 'a', 'w')
   ]
   start <- .extend_list(
     c(
@@ -70,9 +72,9 @@ inversion_mcmc <- function(
       generate(measurement_model)[c('beta', 'gamma', 'rho', 'ell')]
     ),
     start,
-    .remove_nulls(process_model[c('alpha', 'eta', 'a', 'w')]),
+    .remove_nulls(process_model[c('kappa', 'alpha', 'eta', 'a', 'w')]),
     .remove_nulls(measurement_model[c('beta', 'gamma', 'rho', 'ell')])
-  )[c('alpha', 'eta', 'beta', 'a', 'w', 'gamma', 'rho', 'ell')]
+  )[c('kappa', 'alpha', 'eta', 'beta', 'a', 'w', 'gamma', 'rho', 'ell')]
   if (any(is.na(start$a))) {
     start$a[is.na(start$a)] <- generated_process_model$a[is.na(start$a)]
   }
@@ -80,6 +82,7 @@ inversion_mcmc <- function(
     start$w[is.na(start$w)] <- generated_process_model$w[is.na(start$w)]
   }
 
+  kappa_samples <- matrix(NA, nrow = n_iterations, ncol = n_kappa)
   alpha_samples <- matrix(NA, nrow = n_iterations, ncol = n_alpha)
   eta_samples <- matrix(NA, nrow = n_iterations, ncol = n_eta)
   a_samples <- matrix(NA, nrow = n_iterations, ncol = n_a)
@@ -91,6 +94,7 @@ inversion_mcmc <- function(
 
   current <- start
 
+  kappa_samples[1, ] <- current$kappa
   alpha_samples[1, ] <- current$alpha
   eta_samples[1, ] <- current$eta
   a_samples[1, ] <- current$a
@@ -114,6 +118,9 @@ inversion_mcmc <- function(
       pb$tick()
     }
 
+    log_trace('[{iteration}/{n_iterations}] Sampling kappa')
+    current <- kappa_sampler(current)
+
     log_trace('[{iteration}/{n_iterations}] Sampling omega')
     current <- omega_sampler(current)
 
@@ -132,6 +139,7 @@ inversion_mcmc <- function(
     log_trace('[{iteration}/{n_iterations}] Sampling ell')
     current <- ell_sampler(current, iteration <= warm_up)
 
+    kappa_samples[iteration, ] <- current$kappa
     alpha_samples[iteration, ] <- current$alpha
     eta_samples[iteration, ] <- current$eta
     a_samples[iteration, ] <- current$a
@@ -146,6 +154,7 @@ inversion_mcmc <- function(
     region = process_model$regions,
     month_index = seq_len(length(unique(process_model$control_emissions$month_start)))
   )
+  colnames(kappa_samples) <- sprintf('kappa[%d]', seq_len(n_kappa))
   colnames(alpha_samples) <- sprintf(
     'alpha[%d, %d]',
     region_month$region,
@@ -161,6 +170,7 @@ inversion_mcmc <- function(
 
   structure(
     list(
+      kappa = coda::mcmc(kappa_samples),
       alpha = coda::mcmc(alpha_samples),
       eta = coda::mcmc(eta_samples),
       a = coda::mcmc(a_samples),

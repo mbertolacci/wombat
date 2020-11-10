@@ -18,7 +18,9 @@
   function(current, ...) {
     alpha_p <- as.vector(chol(Q_alpha(list(
       a = current$a, w = rep(1, n_w)
-    ))) %*% current$alpha)
+    ))) %*% (
+      current$alpha - as.vector(model$Gamma %*% current$kappa)
+    ))
     alpha_p_matrix <- matrix(alpha_p, ncol = n_times)
 
     n <- n_times * table(model$w_factor)
