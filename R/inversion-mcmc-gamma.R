@@ -7,6 +7,13 @@
   Sigma_epsilon = .make_Sigma_epsilon(measurement_model),
   Z2_tilde = calculate(measurement_model, 'Z2_tilde', process_model)
 ) {
+  if (!is.null(measurement_model[['gamma']])) {
+    return(function(current, ...) {
+      current$gamma <- measurement_model[['gamma']]
+      current
+    })
+  }
+
   attenuation_index <- as.integer(measurement_model$attenuation_factor)
   n_parts <- nlevels(measurement_model$attenuation_factor)
 
