@@ -245,11 +245,13 @@ plot_traces <- function(object, n_columns = 4) {
 
   alpha_subset <- object$alpha[
     ,
-    seq(1, ncol(object$alpha), by = ceiling(ncol(object$alpha) / 8))
+    seq(1, ncol(object$alpha), by = ceiling(ncol(object$alpha) / 8)),
+    drop = FALSE
   ]
   eta_subset <- object$eta[
     ,
-    seq(1, ncol(object$eta), by = ceiling(ncol(object$eta) / 8))
+    seq(1, ncol(object$eta), by = ceiling(ncol(object$eta) / 8)),
+    drop = FALSE
   ]
 
   gridExtra::grid.arrange(
@@ -274,6 +276,7 @@ plot_traces <- function(object, n_columns = 4) {
       ncol(object$gamma),
       ncol(object$rho),
       ncol(object$ell)
-    ) / n_columns)
+    ) / n_columns),
+    ncol = 1
   )
 }
