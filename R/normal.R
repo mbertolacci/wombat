@@ -81,7 +81,7 @@
     }
   } else if (!missing(precision)) {
     if (is(precision, 'STridiagonalMatrix')) {
-      precision <- instantiate(precision)
+      precision <- as(precision, 'sparseMatrix')
     }
     mean + .sample_Q(1, precision)
   } else {
