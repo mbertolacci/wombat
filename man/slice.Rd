@@ -4,7 +4,7 @@
 \alias{slice}
 \title{Wrapper to automate learning in a slice sampler}
 \usage{
-slice(w, max_evaluations = 100)
+slice(w, min_w = 0, max_evaluations = 100)
 }
 \arguments{
 \item{w}{stepping-out interval. This is just a starting value if returned
