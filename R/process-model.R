@@ -337,10 +337,14 @@ generate.flux_process_model <- function(model, n_samples = 1) {
   }
 
   if (is.null(model[['eta']])) {
-    model$eta <- t(replicate(
-      n_samples,
-      .sample_normal_precision(model$eta_prior_precision)
-    ))
+    if (ncol(model$eta_prior_precision) > 0) {
+      model$eta <- t(replicate(
+        n_samples,
+        .sample_normal_precision(model$eta_prior_precision)
+      ))
+    } else {
+      model$eta <- numeric(0)
+    }
   }
 
   simplify <- function(x) {
