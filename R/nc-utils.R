@@ -5,10 +5,11 @@ ncvar_get_time <- function(x, variable_name) {
     units <- x$dim[[variable_name]]$units
   }
 
-  match <- stringr::str_match(units, '^(days|hours|seconds|Days|Hours|Seconds) since (.+)$')[1, 2 : 3]
+  match <- stringr::str_match(units, '^(days|hours|minutes|seconds|Days|Hours|Seconds) since (.+)$')[1, 2 : 3]
   lubridate::ymd_hms(match[2]) + list(
     'days' = lubridate::days,
     'hours' = lubridate::hours,
+    'minutes' = lubridate::minutes,
     'seconds' = lubridate::seconds
   )[[tolower(match[1])]](ncdf4::ncvar_get(x, variable_name))
 }
