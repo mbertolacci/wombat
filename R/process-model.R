@@ -490,8 +490,7 @@ aggregate_flux <- function(
   parameters = model,
   aggregator = flux_aggregator(
     model,
-    filter_expr,
-    parameters
+    !! enquo(filter_expr)
   )
 ) {
   if (missing(parameters) && !('alpha' %in% names(model))) {
