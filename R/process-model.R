@@ -93,7 +93,6 @@ flux_process_model <- function(
     'control_emissions',
     'control_mole_fraction',
     'perturbations',
-    'sensitivities',
     'lag',
     'H',
     'regions',
@@ -121,7 +120,6 @@ update.flux_process_model <- function(model, ...) {
     'control_emissions',
     'control_mole_fraction',
     'perturbations',
-    'sensitivities',
     'lag',
     'H',
     'alpha',
@@ -144,7 +142,7 @@ update.flux_process_model <- function(model, ...) {
 
   # Ensure that current_arguments doesn't override anything
   terminal_arguments <- list(
-    H = c('perturbations', 'control_mole_fraction', 'sensitivities', 'lag'),
+    H = c('perturbations', 'control_mole_fraction', 'lag'),
     Psi = c('control_mole_fraction'),
     eta_prior_precision = c('control_mole_fraction', 'Psi')
   )
@@ -167,19 +165,23 @@ transport_matrix <- function(
   sensitivities,
   lag = months(3)
 ) {
-  log_debug('Truncating sensitivities')
-  # NOTE(mgnb): do lag computation on the month_start from control because it's
-  # much shorter than doing it after it's joined to sensitivities
-  control_month_start_lag <- to_month_start(control_mole_fraction$time) - lag
-  truncated_sensitivities <- sensitivities %>%
-    mutate(
-      month_start_lag = control_month_start_lag[
-        match(model_id, control_mole_fraction$model_id)
-      ]
-    ) %>%
-    filter(
-      month_start_lag <= from_month_start
-    )
+  if (!is.infinite(lag)) {
+    log_debug('Truncating sensitivities')
+    # NOTE(mgnb): do lag computation on the month_start from control because it's
+    # much shorter than doing it after it's joined to sensitivities
+    control_month_start_lag <- to_month_start(control_mole_fraction$time) - lag
+    truncated_sensitivities <- sensitivities %>%
+      mutate(
+        month_start_lag = control_month_start_lag[
+          match(model_id, control_mole_fraction$model_id)
+        ]
+      ) %>%
+      filter(
+        month_start_lag <= from_month_start
+      )
+  } else {
+    truncated_sensitivities <- sensitivities
+  }
 
   log_debug('Adding row and column indices')
   column_indices <- expand.grid(
