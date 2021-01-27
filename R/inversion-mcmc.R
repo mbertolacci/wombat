@@ -248,16 +248,18 @@ plot_traces <- function(object, n_columns = 4) {
     seq(1, ncol(object$alpha), by = ceiling(ncol(object$alpha) / 8)),
     drop = FALSE
   ]
-  eta_subset <- object$eta[
-    ,
-    seq(1, ncol(object$eta), by = ceiling(ncol(object$eta) / 8)),
-    drop = FALSE
-  ]
+  if (ncol(object$eta) > 0) {
+    eta_subset <- object$eta[
+      ,
+      seq(1, ncol(object$eta), by = ceiling(ncol(object$eta) / 8)),
+      drop = FALSE
+    ]
+  }
 
   gridExtra::grid.arrange(
     grobs = .remove_nulls(list(
       trace_plot(alpha_subset),
-      trace_plot(eta_subset),
+      if (ncol(object$eta) > 0) trace_plot(eta_subset) else NULL,
       if (ncol(object$beta) > 0) trace_plot(object$beta) else NULL,
       trace_plot(object$a, FALSE),
       trace_plot(object$w, FALSE),
@@ -269,7 +271,7 @@ plot_traces <- function(object, n_columns = 4) {
     bottom = 'Iteration',
     heights = ceiling(c(
       ncol(alpha_subset),
-      ncol(eta_subset),
+      if (ncol(object$eta) > 0) ncol(eta_subset) else NULL,
       if (ncol(object$beta) > 0) ncol(object$beta) else NULL,
       ncol(object$a),
       ncol(object$w),
