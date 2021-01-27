@@ -75,31 +75,11 @@ flux_process_model <- function(
   kappa_prior_mean <- .recycle_vector_to(kappa_prior_mean, ncol(Gamma))
   kappa_prior_variance <- .recycle_vector_to(kappa_prior_variance, ncol(Gamma))
 
-  log_debug('Constructing perturbations basis')
-  row_indices <- control_emissions %>%
-    mutate(i = 1 : n()) %>%
-    select(model_id, i)
-  column_indices <- expand.grid(
-    region = regions,
-    from_month_start = sort(unique(perturbations$from_month_start))
-  ) %>%
-    mutate(j = 1 : n())
-  Phi_df <- perturbations %>%
-    left_join(row_indices, by = 'model_id') %>%
-    left_join(column_indices, by = c('from_month_start', 'region'))
-  Phi <- sparseMatrix(
-    i = Phi_df$i,
-    j = Phi_df$j,
-    x = Phi_df$flux_density,
-    dims = c(nrow(control_emissions), nrow(column_indices))
-  )
-
   eta_prior_mean <- .recycle_vector_to(eta_prior_mean, ncol(Psi))
   if (!missing(eta)) {
     eta <- .recycle_vector_to(eta, ncol(Psi))
   }
 
-  stopifnot(ncol(H) == ncol(Phi))
   stopifnot(is.list(a_prior))
   stopifnot(length(a_prior) == 2)
   stopifnot(length(a_factor) == length(regions))
@@ -116,7 +96,6 @@ flux_process_model <- function(
     'sensitivities',
     'lag',
     'H',
-    'Phi',
     'regions',
     'alpha',
     'Gamma',
@@ -390,10 +369,6 @@ calculate.flux_process_model <- function(
     add_rowwise(x$control_mole_fraction$co2, calculate(x, 'Y2_tilde', parameters))
   } else if (name == 'Y2_control') {
     x$control_mole_fraction$co2
-  } else if (name == 'Y1_tilde') {
-    get_samples(x$Phi, parameters$alpha)
-  } else if (name == 'Y1') {
-    add_rowwise(x$control_emissions$flux_density, calculate(x, 'Y1_tilde', parameters))
   } else if (name == 'H_alpha') {
     get_samples(x$H, parameters$alpha)
   }
