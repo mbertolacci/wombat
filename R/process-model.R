@@ -434,24 +434,27 @@ flux_aggregator <- function(model, filter_expr) {
     group_by(month_start) %>%
     summarise(
       total_flux = sum(flux)
-    )
+    ) %>%
+    ungroup()
 
-  matching_control <- model$control_emissions %>%
-    filter(!! filter_expr)
-  row_indices <- data.frame(
-    month_start = sort(unique(model$control_emissions$month_start))
-  ) %>%
+  row_indices <- control_aggregate %>%
+    select(month_start) %>%
     mutate(i = 1 : n())
+
   column_indices <- expand.grid(
     region = model$regions,
     from_month_start = sort(unique(model$perturbations$from_month_start))
   ) %>%
     mutate(j = 1 : n())
-  Phi_aggregate_df <- model$perturbations %>%
-    filter(model_id %in% matching_control$model_id) %>%
+
+  matching_control <- model$control_emissions %>%
+    filter(!! filter_expr) %>%
+    select(model_id, type, month_start, area)
+
+  aggregate_df <- matching_control %>%
     left_join(
-      matching_control %>% select(model_id, month_start, area),
-      by = 'model_id'
+      model$perturbations,
+      by = c('model_id', 'type')
     ) %>%
     mutate(
       # kgCO2 / s / m ^ 2 => PgC
@@ -461,15 +464,16 @@ flux_aggregator <- function(model, filter_expr) {
     summarise(
       total_flux = sum(flux)
     ) %>%
+    ungroup() %>%
     left_join(row_indices, by = 'month_start') %>%
     left_join(column_indices, by = c('from_month_start', 'region'))
 
   list(
     total = control_aggregate,
     Phi = sparseMatrix(
-      i = Phi_aggregate_df$i,
-      j = Phi_aggregate_df$j,
-      x = Phi_aggregate_df$total_flux,
+      i = aggregate_df$i,
+      j = aggregate_df$j,
+      x = aggregate_df$total_flux,
       dims = c(
         nrow(row_indices),
         nrow(column_indices)
