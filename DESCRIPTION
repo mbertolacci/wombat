@@ -1,17 +1,27 @@
-Package: fluxcapacitor
-Title: CO2 Flux Inversion
+Package: wombat
+Title: WOllongong Methodology for Bayesian Assimilation of Trace-gases
 Version: 0.0.1
-Authors@R: 
-    person(given = "Michael",
-           family = "Bertolacci",
-           role = c("aut", "cre"),
-           email = "m.bertolacci@gmail.com",
-           comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-License: What license it uses
+Authors@R:
+    c(person(given = "Michael",
+             family = "Bertolacci",
+             role = c("aut", "cre"),
+             email = "m.bertolacci@gmail.com",
+             comment = c(ORCID = "0000-0003-0317-5941")),
+      person(given = "Andrew",
+             family = "Zammit-Mangion",
+             role = "aut"),
+      person(given = "Noel",
+             family = "Cressie",
+             role = "aut"),
+      person(given = "Yi",
+             family = "Cao",
+             role = "aut"))
+Description: Implements the WOllongong Methodology for Bayesian Assimilation of
+    Trace-gases.
+License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
-Imports: 
+Imports:
     FRK,
     Matrix,
     armspp,
@@ -27,7 +37,7 @@ Imports:
     tidyr,
     fastsparse
 RoxygenNote: 7.1.1
-Suggests: 
+Suggests:
     testthat,
     lintr,
     shiny,

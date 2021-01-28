@@ -1,4 +1,4 @@
 library(testthat)
-library(fluxcapacitor)
+library(wombat)
 
-test_check('fluxcapacitor')
+test_check('wombat')
