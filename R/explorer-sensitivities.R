@@ -92,7 +92,11 @@ sensitivity_explorer_ui <- function(id, process_model) {
         max = ceiling(max(abs(control_emissions$flux_density)))
       ),
       colourInput(ns('low_colour'), 'Low colour:', value = '#35978f'),
-      colourInput(ns('mid_colour'), 'Mid colour (CO2 only):', value = '#eeeeee'),
+      colourInput(
+        ns('mid_colour'),
+        'Mid colour (CO2 only):',
+        value = '#eeeeee'
+      ),
       colourInput(ns('high_colour'), 'High colour:', value = '#bf812d'),
       width = 3
     ),

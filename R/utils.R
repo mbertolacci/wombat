@@ -143,14 +143,24 @@ n_terms <- function(f) {
 }
 
 #' @export
-scale_fill_wes_palette_c <- function(palette = 'Zissou1', reverse = FALSE, n = 100, ...) {
+scale_fill_wes_palette_c <- function(
+  palette = 'Zissou1',
+  reverse = FALSE,
+  n = 100,
+  ...
+) {
   colours <- wesanderson::wes_palette(name = palette, n, type = 'continuous')
   if (reverse) colours <- rev(colours)
   scale_fill_gradientn(colours = colours, ...)
 }
 
 #' @export
-scale_colour_wes_palette_c <- function(palette = 'Zissou1', reverse = FALSE, n = 100, ...) {
+scale_colour_wes_palette_c <- function(
+  palette = 'Zissou1',
+  reverse = FALSE,
+  n = 100,
+  ...
+) {
   colours <- wesanderson::wes_palette(name = palette, n, type = 'continuous')
   if (reverse) colours <- rev(colours)
   scale_colour_gradientn(colours = colours, ...)

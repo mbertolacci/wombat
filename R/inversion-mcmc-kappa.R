@@ -27,7 +27,9 @@
       + kappa_prior_precision %*% process_model$kappa_prior_mean
     ))
 
-    current$kappa <- kappa_mean + .sample_normal_precision_chol(chol_kappa_precision)
+    current$kappa <- kappa_mean + .sample_normal_precision_chol(
+      chol_kappa_precision
+    )
     current
   }
 }

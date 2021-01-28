@@ -28,9 +28,10 @@
         learn = warming_up,
         include_n_evaluations = TRUE
       )
-      log_trace(
-        'a[{i}] = {round(output$sample, 3)} took {output$n_evaluations} evaluations, w = {output$w}'
-      )
+      log_trace(paste0(
+        'a[{i}] = {round(output$sample, 3)} took {output$n_evaluations}',
+        ' evaluations, w = {output$w}'
+      ))
       current$a[i] <- output$sample
     }
 

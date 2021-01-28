@@ -31,9 +31,17 @@ inversion_mcmc <- function(
   X <- .make_X_omega(process_model, measurement_model)
   Sigma_epsilon <- .make_Sigma_epsilon(measurement_model)
   if (use_tensorflow) {
-    Xt_Q_epsilon_X <- .make_Xt_Q_epsilon_X_tf(X, measurement_model, Sigma_epsilon = Sigma_epsilon)
+    Xt_Q_epsilon_X <- .make_Xt_Q_epsilon_X_tf(
+      X,
+      measurement_model,
+      Sigma_epsilon = Sigma_epsilon
+    )
   } else {
-    Xt_Q_epsilon_X <- .make_Xt_Q_epsilon_X(X, measurement_model, Sigma_epsilon = Sigma_epsilon)
+    Xt_Q_epsilon_X <- .make_Xt_Q_epsilon_X(
+      X,
+      measurement_model,
+      Sigma_epsilon = Sigma_epsilon
+    )
   }
 
   kappa_sampler <- .make_kappa_sampler(process_model)
@@ -152,7 +160,9 @@ inversion_mcmc <- function(
 
   region_month <- expand.grid(
     region = process_model$regions,
-    month_index = seq_len(length(unique(process_model$control_emissions$month_start)))
+    month_index = seq_len(length(unique(
+      process_model$control_emissions$month_start
+    )))
   )
   colnames(kappa_samples) <- sprintf('kappa[%d]', seq_len(n_kappa))
   colnames(alpha_samples) <- sprintf(

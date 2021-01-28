@@ -50,7 +50,10 @@ flux_process_model <- function(
   }
 
   stopifnot_within(control_emissions$model_id, perturbations$model_id)
-  stopifnot_within(perturbations$from_month_start, sensitivities$from_month_start)
+  stopifnot_within(
+    perturbations$from_month_start,
+    sensitivities$from_month_start
+  )
   stopifnot_within(perturbations$region, sensitivities$region)
   stopifnot_within(sensitivities$model_id, control_mole_fraction$model_id)
 
@@ -167,8 +170,8 @@ transport_matrix <- function(
 ) {
   if (!is.infinite(lag)) {
     log_debug('Truncating sensitivities')
-    # NOTE(mgnb): do lag computation on the month_start from control because it's
-    # much shorter than doing it after it's joined to sensitivities
+    # NOTE(mgnb): do lag computation on the month_start from control because
+    # it's much shorter than doing it after it's joined to sensitivities
     control_month_start_lag <- to_month_start(control_mole_fraction$time) - lag
     truncated_sensitivities <- sensitivities %>%
       mutate(
@@ -273,7 +276,9 @@ generate.flux_process_model <- function(model, n_samples = 1) {
     rate = ifelse(model$w_prior[['rate']] <= 0, 1, model$w_prior[['rate']])
   )))
   if (any(model$w_prior[['shape']] < 0 | model$w_prior[['rate']] < 0)) {
-    warning('Improper prior for w; generating values using incorrect proper prior')
+    warning(
+      'Improper prior for w; generating values using incorrect proper prior'
+    )
   }
   if (!is.null(model[['w']])) {
     is_fixed <- which(!is.na(model$w))
@@ -376,7 +381,11 @@ calculate.flux_process_model <- function(
   output <- if (name == 'Y2_tilde') {
     get_samples(x$H, parameters$alpha) + get_samples(x$Psi, parameters$eta)
   } else if (name == 'Y2') {
-    add_rowwise(x$control_mole_fraction$co2, calculate(x, 'Y2_tilde', parameters))
+    add_rowwise(x$control_mole_fraction$co2, calculate(
+      x,
+      'Y2_tilde',
+      parameters
+    ))
   } else if (name == 'Y2_control') {
     x$control_mole_fraction$co2
   } else if (name == 'H_alpha') {
@@ -395,9 +404,19 @@ log_prior.flux_process_model <- function(model, parameters = model) {
   output <- 0
 
   if (is.null(model[['a']]) || anyNA(model[['a']])) {
-    a_shape1 <- .recycle_vector_to(model$a_prior[['shape1']], length(parameters$a))
-    a_shape2 <- .recycle_vector_to(model$a_prior[['shape2']], length(parameters$a))
-    a_na <- if (is.null(model[['a']])) seq_len(length(parameters$a)) else is.na(model[['a']])
+    a_shape1 <- .recycle_vector_to(
+      model$a_prior[['shape1']],
+      length(parameters$a)
+    )
+    a_shape2 <- .recycle_vector_to(
+      model$a_prior[['shape2']],
+      length(parameters$a)
+    )
+    a_na <- if (is.null(model[['a']])) {
+      seq_len(length(parameters$a))
+    } else {
+      is.na(model[['a']])
+    }
     output <- output + sum(dbeta(
       parameters$a[a_na],
       shape1 = a_shape1[a_na],
@@ -407,9 +426,16 @@ log_prior.flux_process_model <- function(model, parameters = model) {
   }
 
   if (is.null(model[['w']]) || anyNA(model[['w']])) {
-    w_shape <- .recycle_vector_to(model$w_prior[['shape']], length(parameters$w))
+    w_shape <- .recycle_vector_to(
+      model$w_prior[['shape']],
+      length(parameters$w)
+    )
     w_rate <- .recycle_vector_to(model$w_prior[['rate']], length(parameters$w))
-    w_na <- if (is.null(model[['w']])) seq_len(length(parameters$w)) else is.na(model[['w']])
+    w_na <- if (is.null(model[['w']])) {
+      seq_len(length(parameters$w))
+    } else {
+      is.na(model[['w']])
+    }
     output <- output + sum(ifelse(
       w_shape[w_na] <= 0 | w_rate[w_na] <= 0,
       if (any(parameters$w[w_na] <= 0)) -Inf else 0,
@@ -435,7 +461,12 @@ flux_aggregator <- function(model, filter_expr) {
       flux = if_else(
         test_condition,
         # kgCO2 / s / m ^ 2 => PgC
-        flux_density * area * 10 ^ (3 - 15) / 44.01 * 12.01 * lubridate::days_in_month(month_start) * 24 * 60 * 60,
+        flux_density
+          * area
+          * 10 ^ (3 - 15) / 44.01
+          * 12.01
+          * lubridate::days_in_month(month_start)
+          * 24 * 60 * 60,
         0
       )
     ) %>%
@@ -466,7 +497,12 @@ flux_aggregator <- function(model, filter_expr) {
     ) %>%
     mutate(
       # kgCO2 / s / m ^ 2 => PgC
-      flux = flux_density * area * 10 ^ (3 - 15) / 44.01 * 12.01 * lubridate::days_in_month(month_start) * 24 * 60 * 60
+      flux = flux_density
+        * area
+        * 10 ^ (3 - 15) / 44.01
+        * 12.01
+        * lubridate::days_in_month(month_start)
+        * 24 * 60 * 60
     ) %>%
     group_by(from_month_start, region, month_start) %>%
     summarise(
@@ -508,9 +544,13 @@ aggregate_flux <- function(
   tibble::tibble(
     month_start = aggregator$total$month_start,
     flux = if (is.vector(parameters[['alpha']])) {
-      aggregator$total$total_flux + as.vector(aggregator$Phi %*% parameters[['alpha']])
+      aggregator$total$total_flux + as.vector(
+        aggregator$Phi %*% parameters[['alpha']]
+      )
     } else {
-      aggregator$total$total_flux + as.matrix(aggregator$Phi %*% t(parameters[['alpha']]))
+      aggregator$total$total_flux + as.matrix(
+        aggregator$Phi %*% t(parameters[['alpha']])
+      )
     }
   )
 }

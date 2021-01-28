@@ -62,12 +62,16 @@
           )
         }, learn = warming_up, include_n_evaluations = TRUE)
       }, error = function(e) {
-        log_error('{name}[{i}] sampler failed (group name {levels(measurement_model$attenuation_factor)[i]})')
+        log_error(paste0(
+          '{name}[{i}] sampler failed (group name',
+          ' {levels(measurement_model$attenuation_factor)[i]})'
+        ))
         stop(e)
       })
-      log_trace(
-        '{name}[{i}] = {round(output$sample, 3)} took {output$n_evaluations} evaluations, w = {output$w}'
-      )
+      log_trace(paste0(
+        '{name}[{i}] = {round(output$sample, 3)} took {output$n_evaluations}',
+        ' evaluations, w = {output$w}'
+      ))
       current[[name]][i] <- output$sample
     }
 

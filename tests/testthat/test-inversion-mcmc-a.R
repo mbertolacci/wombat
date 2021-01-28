@@ -5,22 +5,27 @@ test_that('quantiles are estimated correctly', {
     control_emissions,
     control_mole_fraction,
     perturbations,
-    sensitivities
+    sensitivities,
+    a_factor = factor(rep(1, 2)),
+    w_factor = factor(rep(1, 2))
   )
-  a_sampler <- .make_a_sampler(model)
+  a_sampler <- .make_a_sampler(
+    model,
+    tuning = list(w = 0.25, min_w = 0.1, max_evaluations = 100)
+  )
 
   current <- list(
     a = 0.5,
     alpha = rnorm(6),
-    w = rep(1, 2)
+    w = rep(1, 2),
+    kappa = c(0, 0)
   )
 
-  Q_alpha <- .make_Q_alpha(model)
+  log_likelihood <- .make_alpha_log_likelihood(model)
+
   log_a_conditional <- function(a) {
     current$a <- a
-    output <- .log_pdf_precision_cholesky(
-      current$alpha, chol(Q_alpha(current))
-    ) + log_prior(model, current)
+    output <- log_likelihood(current) + log_prior(model, current)
     if (is.nan(output)) -Inf
     else output
   }

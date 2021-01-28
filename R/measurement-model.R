@@ -394,7 +394,12 @@ log_prior.flux_measurement_model <- function(model, parameters = model) {
   as(At, 'dgCMatrix')
 }
 
-.Xt_Q_epsilon_X_parts <- function(X, model, Sigma_epsilon, has_cross_correlations) {
+.Xt_Q_epsilon_X_parts <- function(
+  X,
+  model,
+  Sigma_epsilon,
+  has_cross_correlations
+) {
   attenuation_index <- as.integer(model$attenuation_factor)
   n_gamma <- nlevels(model$attenuation_factor)
   n_per_gamma <- table(model$attenuation_factor)

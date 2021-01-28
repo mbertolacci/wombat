@@ -29,7 +29,13 @@ perturbations <- expand.grid(
 
 control_mole_fraction <- data.frame(
   model_id = model_ids,
-  time = lubridate::ymd_hm(c('2016-01-03 09:00', '2016-01-03 10:00', '2016-02-03 10:00', '2016-03-03 10:00', '2016-03-03 11:00'))
+  time = lubridate::ymd_hm(c(
+    '2016-01-03 09:00',
+    '2016-01-03 10:00',
+    '2016-02-03 10:00',
+    '2016-03-03 10:00',
+    '2016-03-03 11:00'
+  ))
 ) %>%
   mutate(
     co2 = 0,
@@ -46,6 +52,10 @@ sensitivities <- expand.grid(
 observations <- data.frame(
   observation_id = 1 : 3,
   instrument_mode = c('LG', 'LG', 'LN'),
-  time = lubridate::ymd_hm(c('2016-01-03 09:00', '2016-01-03 10:00', '2016-02-03 10:00')),
+  time = lubridate::ymd_hm(c(
+    '2016-01-03 09:00',
+    '2016-01-03 10:00',
+    '2016-02-03 10:00'
+  )),
   co2_error = c(1, 2, 1)
 )

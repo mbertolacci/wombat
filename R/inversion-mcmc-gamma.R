@@ -42,9 +42,10 @@
           ), log = TRUE)
         )
       }, learn = warming_up, include_n_evaluations = TRUE)
-      log_trace(
-        'gamma[{i}] = {round(output$sample, 3)} took {output$n_evaluations} evaluations, w = {output$w}'
-      )
+      log_trace(paste0(
+        'gamma[{i}] = {round(output$sample, 3)} took {output$n_evaluations}',
+        ' evaluations, w = {output$w}'
+      ))
       current$gamma[i] <- output$sample
     }
 
