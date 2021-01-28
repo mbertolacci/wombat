@@ -349,7 +349,15 @@ calculate.flux_process_model <- function(
 
   parameters <- lapply(parameters[c('alpha', 'eta')], function(x) {
     if (is.null(x)) return(x)
-    if (is.vector(x)) t(x) else as.matrix(x)
+    if (is.vector(x)) {
+      t(x)
+    } else {
+      if (ncol(x) == 0) {
+        x
+      } else {
+        as.matrix(x)
+      }
+    }
   })
 
   get_samples <- function(l, r) {
