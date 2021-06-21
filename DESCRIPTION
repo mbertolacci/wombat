@@ -24,6 +24,7 @@ LazyData: true
 Imports:
     FRK,
     Matrix,
+    WoodburyMatrix,
     armspp,
     coda,
     dplyr,
